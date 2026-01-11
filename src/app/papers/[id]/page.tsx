@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { arxivService } from "@/lib/services/arxiv";
+import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -123,21 +124,7 @@ export default async function PaperDetailPage({ params }: PageProps) {
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Key Points</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Placeholder for AI-generated summary */}
-              <div className="text-muted-foreground text-center py-8">
-                <p>AI summary will appear here once generated.</p>
-                <p className="text-sm mt-2">
-                  Summaries are generated using GPT to highlight the main
-                  contributions.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <PaperSummary paperId={paper.arxivId} />
         </TabsContent>
 
         <TabsContent value="abstract" className="space-y-4">
@@ -154,22 +141,7 @@ export default async function PaperDetailPage({ params }: PageProps) {
         </TabsContent>
 
         <TabsContent value="eli5" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">
-                Explain Like I'm 5
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Placeholder for ELI5 summary */}
-              <div className="text-muted-foreground text-center py-8">
-                <p>Simple explanation will appear here once generated.</p>
-                <p className="text-sm mt-2">
-                  ELI5 summaries break down complex research into easy-to-understand language.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <PaperEli5 paperId={paper.arxivId} />
         </TabsContent>
 
         <TabsContent value="social" className="space-y-4">
