@@ -8,12 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
-  Bookmark,
   ExternalLink,
   FileText,
   Share2,
   Users,
 } from "lucide-react";
+import { SaveButton } from "@/components/papers/save-button";
 import { arxivService } from "@/lib/services/arxiv";
 import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
 import { MentionList } from "@/components/mentions/mention-list";
@@ -92,9 +92,7 @@ export default async function PaperDetailPage({ params }: PageProps) {
               arXiv
             </a>
           </Button>
-          <Button variant="outline" size="icon">
-            <Bookmark className="h-4 w-4" />
-          </Button>
+          <SaveButton arxivId={paper.arxivId} />
           <Button variant="outline" size="icon">
             <Share2 className="h-4 w-4" />
           </Button>

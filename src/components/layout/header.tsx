@@ -8,7 +8,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BookOpen, Menu, Search, User } from "lucide-react";
+import { BookOpen, Menu, Search } from "lucide-react";
+import { HeaderAuth } from "@/components/auth/header-auth";
 
 export function Header() {
   return (
@@ -60,10 +61,7 @@ export function Header() {
             <span className="sr-only">Search</span>
           </Button>
 
-          <Button variant="ghost" size="icon">
-            <User className="h-4 w-4" />
-            <span className="sr-only">Account</span>
-          </Button>
+          <HeaderAuth />
 
           {/* Mobile menu */}
           <DropdownMenu>
