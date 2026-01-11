@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "workers": "tsx src/workers/index.ts",
+    "workers:dev": "tsx watch src/workers/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "tsx": "^4.19.0",
     "@types/node": "^20.19.28",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -17,6 +17,7 @@ import { SaveButton } from "@/components/papers/save-button";
 import { arxivService } from "@/lib/services/arxiv";
 import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
 import { MentionList } from "@/components/mentions/mention-list";
+import { NewsList } from "@/components/news";
 import { AuthorsList } from "@/components/authors";
 
 interface PageProps {
@@ -108,6 +109,7 @@ export default async function PaperDetailPage({ params }: PageProps) {
           <TabsTrigger value="abstract">Abstract</TabsTrigger>
           <TabsTrigger value="eli5">ELI5</TabsTrigger>
           <TabsTrigger value="social">Social</TabsTrigger>
+          <TabsTrigger value="news">News</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
@@ -133,6 +135,10 @@ export default async function PaperDetailPage({ params }: PageProps) {
 
         <TabsContent value="social" className="space-y-4">
           <MentionList paperId={paper.arxivId} />
+        </TabsContent>
+
+        <TabsContent value="news" className="space-y-4">
+          <NewsList paperId={paper.arxivId} />
         </TabsContent>
       </Tabs>
 
