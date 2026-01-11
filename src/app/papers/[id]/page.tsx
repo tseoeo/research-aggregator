@@ -17,6 +17,7 @@ import {
 import { arxivService } from "@/lib/services/arxiv";
 import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
 import { MentionList } from "@/components/mentions/mention-list";
+import { AuthorsList } from "@/components/authors";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -69,21 +70,8 @@ export default async function PaperDetailPage({ params }: PageProps) {
 
         {/* Authors */}
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Users className="h-4 w-4" />
-          <div className="flex flex-wrap gap-x-2 gap-y-1">
-            {paper.authors.map((author, idx) => (
-              <span key={idx}>
-                {author.name}
-                {author.affiliation && (
-                  <span className="text-muted-foreground/70 text-sm">
-                    {" "}
-                    ({author.affiliation})
-                  </span>
-                )}
-                {idx < paper.authors.length - 1 && ","}
-              </span>
-            ))}
-          </div>
+          <Users className="h-4 w-4 flex-shrink-0" />
+          <AuthorsList authors={paper.authors} paperTitle={paper.title} />
         </div>
 
         {/* Actions */}
