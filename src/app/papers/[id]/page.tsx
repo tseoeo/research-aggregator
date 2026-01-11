@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { arxivService } from "@/lib/services/arxiv";
 import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
+import { MentionList } from "@/components/mentions/mention-list";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -145,20 +146,7 @@ export default async function PaperDetailPage({ params }: PageProps) {
         </TabsContent>
 
         <TabsContent value="social" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Social Mentions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Placeholder for social mentions */}
-              <div className="text-muted-foreground text-center py-8">
-                <p>No social mentions found yet.</p>
-                <p className="text-sm mt-2">
-                  We track discussions on Twitter, Bluesky, Reddit, and more.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <MentionList paperId={paper.arxivId} />
         </TabsContent>
       </Tabs>
 
