@@ -91,8 +91,6 @@ A public website that aggregates AI research papers (inspired by [whathappened.t
 ### Environment Variables Needed
 - [ ] AUTH_GITHUB_ID - GitHub OAuth app ID
 - [ ] AUTH_GITHUB_SECRET - GitHub OAuth app secret
-- [ ] AUTH_GOOGLE_ID - Google OAuth client ID
-- [ ] AUTH_GOOGLE_SECRET - Google OAuth client secret
 - [ ] OPENROUTER_API_KEY - For AI summaries
 - [ ] SERPER_API_KEY - For news search (optional, 2500 free/month)
 
@@ -100,8 +98,7 @@ A public website that aggregates AI research papers (inspired by [whathappened.t
 
 ## Next Steps
 
-### 1. Set Up OAuth Providers
-**GitHub OAuth:**
+### 1. Set Up GitHub OAuth
 1. Go to https://github.com/settings/developers
 2. Click "New OAuth App"
 3. Set Homepage URL: `https://research-aggregator-production.up.railway.app`
@@ -109,12 +106,7 @@ A public website that aggregates AI research papers (inspired by [whathappened.t
 5. Copy Client ID → `AUTH_GITHUB_ID`
 6. Generate secret → `AUTH_GITHUB_SECRET`
 
-**Google OAuth:**
-1. Go to https://console.cloud.google.com/apis/credentials
-2. Create OAuth 2.0 Client ID
-3. Add authorized redirect URI: `https://research-aggregator-production.up.railway.app/api/auth/callback/google`
-4. Copy Client ID → `AUTH_GOOGLE_ID`
-5. Copy Client Secret → `AUTH_GOOGLE_SECRET`
+*Note: Using GitHub OAuth only for now. Google OAuth can be added later if needed.*
 
 ### 2. Set Up OpenRouter (AI Summaries)
 1. Go to https://openrouter.ai
@@ -138,10 +130,21 @@ In Railway shell: `npm run db:push`
 ### 6. Test Each Feature
 - [ ] Homepage loads with papers from arXiv
 - [ ] Paper detail page shows summary tabs
-- [ ] Login with GitHub/Google works
+- [ ] Login with GitHub works
 - [ ] Save paper functionality works
 - [ ] Social mentions load
 - [ ] News tab loads (if Serper configured)
+
+---
+
+## Upcoming Features
+
+### GitHub Profile Discovery for Authors
+Automatically find and link GitHub profiles for paper authors/collaborators:
+- Search GitHub API for author names
+- Match against author affiliations and research areas
+- Display GitHub links on author profiles
+- Show author's open source contributions related to their papers
 
 ---
 
