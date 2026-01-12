@@ -4,10 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { arxivService } from "@/lib/services/arxiv";
 
-// Fetch papers directly from arXiv service (no HTTP roundtrip)
+// Fetch papers directly from arXiv service with timeout
 async function getPapers(category?: string) {
   try {
-    const papers = await arxivService.fetchRecentPapers(category || "cs.AI", 20);
+    // Add timeout to prevent infinite loading
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Timeout fetching papers")), 15000);
+    });
+
+    const fetchPromise = arxivService.fetchRecentPapers(category || "cs.AI", 20);
+    const papers = await Promise.race([fetchPromise, timeoutPromise]);
 
     // Transform to expected format
     const transformedPapers = papers.map((paper) => ({

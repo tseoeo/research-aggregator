@@ -45,22 +45,42 @@ export const AI_CATEGORIES = [
 
 const ARXIV_API_BASE = "https://export.arxiv.org/api/query";
 const RATE_LIMIT_MS = 3000; // 3 seconds between requests
+const FETCH_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 
 let lastRequestTime = 0;
 
 /**
  * Enforces rate limiting by waiting if needed
+ * In serverless environments, this is best-effort
  */
 async function enforceRateLimit(): Promise<void> {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
 
   if (timeSinceLastRequest < RATE_LIMIT_MS) {
-    const waitTime = RATE_LIMIT_MS - timeSinceLastRequest;
+    const waitTime = Math.min(RATE_LIMIT_MS - timeSinceLastRequest, RATE_LIMIT_MS);
     await new Promise((resolve) => setTimeout(resolve, waitTime));
   }
 
   lastRequestTime = Date.now();
+}
+
+/**
+ * Fetch with timeout
+ */
+async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -236,7 +256,7 @@ export class ArxivService {
       sortOrder: "descending",
     });
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         "User-Agent": "ResearchAggregator/1.0 (https://github.com/example/research-aggregator)",
       },
@@ -263,7 +283,7 @@ export class ArxivService {
       sortOrder: "descending",
     });
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         "User-Agent": "ResearchAggregator/1.0",
       },
@@ -288,7 +308,7 @@ export class ArxivService {
 
     const url = `${ARXIV_API_BASE}?id_list=${cleanId}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         "User-Agent": "ResearchAggregator/1.0",
       },
@@ -321,7 +341,7 @@ export class ArxivService {
       sortBy: "relevance",
     });
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         "User-Agent": "ResearchAggregator/1.0",
       },
@@ -354,7 +374,7 @@ export class ArxivService {
       sortOrder: "descending",
     });
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: {
         "User-Agent": "ResearchAggregator/1.0",
       },
