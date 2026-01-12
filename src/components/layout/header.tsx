@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BookOpen, Menu, Search } from "lucide-react";
 import { HeaderAuth } from "@/components/auth/header-auth";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Header() {
   return (
@@ -61,8 +60,6 @@ export function Header() {
             <Search className="h-4 w-4" />
             <span className="sr-only">Search</span>
           </Button>
-
-          <ThemeToggle />
 
           <HeaderAuth />
 
