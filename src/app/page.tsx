@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { PaperList } from "@/components/papers/paper-list";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,25 +46,29 @@ async function getPapers(category?: string) {
   }
 }
 
-function CategoryFilter({ selected }: { selected?: string }) {
-  const categories = [
-    { value: "cs.AI", label: "AI" },
-    { value: "cs.LG", label: "ML" },
-    { value: "cs.CL", label: "NLP" },
-    { value: "cs.CV", label: "Vision" },
-    { value: "stat.ML", label: "Stats ML" },
-  ];
+const categories = [
+  { value: "cs.AI", label: "AI" },
+  { value: "cs.LG", label: "ML" },
+  { value: "cs.CL", label: "NLP" },
+  { value: "cs.CV", label: "Vision" },
+  { value: "stat.ML", label: "Stats ML" },
+];
 
+function CategoryFilter({ selected }: { selected?: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       {categories.map((cat) => (
-        <Badge
+        <Link
           key={cat.value}
-          variant={selected === cat.value ? "default" : "outline"}
-          className="cursor-pointer"
+          href={selected === cat.value ? "/" : `/?category=${cat.value}`}
         >
-          {cat.label}
-        </Badge>
+          <Badge
+            variant={selected === cat.value ? "default" : "outline"}
+            className="cursor-pointer hover:bg-accent transition-colors"
+          >
+            {cat.label}
+          </Badge>
+        </Link>
       ))}
     </div>
   );
@@ -101,13 +106,21 @@ async function PapersSection({ category }: { category?: string }) {
   return <PaperList papers={data.papers} />;
 }
 
-export default function HomePage() {
+interface HomePageProps {
+  searchParams: Promise<{ category?: string }>;
+}
+
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const { category } = await searchParams;
+  const selectedCategory = category || "cs.AI";
+  const categoryLabel = categories.find(c => c.value === selectedCategory)?.label || "AI";
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Hero section */}
       <div className="space-y-1 sm:space-y-2">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-          Latest AI Research
+          Latest {categoryLabel} Research
         </h1>
         <p className="text-sm sm:text-base text-muted-foreground">
           Discover the latest papers from arXiv with AI-generated summaries and
@@ -117,15 +130,15 @@ export default function HomePage() {
 
       {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <CategoryFilter />
+        <CategoryFilter selected={selectedCategory} />
         <p className="text-xs sm:text-sm text-muted-foreground">
           Updated every 6 hours from arXiv
         </p>
       </div>
 
       {/* Paper list */}
-      <Suspense fallback={<PapersLoading />}>
-        <PapersSection />
+      <Suspense key={selectedCategory} fallback={<PapersLoading />}>
+        <PapersSection category={selectedCategory} />
       </Suspense>
     </div>
   );
