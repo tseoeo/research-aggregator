@@ -55,7 +55,7 @@ A public website that aggregates AI research papers (inspired by [whathappened.t
 
 ### Phase 5: Authentication ✅
 - Auth.js v5 with Drizzle adapter
-- GitHub + Google OAuth configured
+- GitHub OAuth (Google removed)
 - Protected routes middleware
 - Save papers functionality
 - Follow authors functionality
@@ -77,74 +77,51 @@ A public website that aggregates AI research papers (inspired by [whathappened.t
 ## Current Deployment Status
 
 ### Railway Services
-- **Web App**: ✅ Deployed at `research-aggregator-production.up.railway.app`
+- **Web App**: ✅ Deployed at `research.dimitrov.im` (custom domain)
 - **PostgreSQL**: ✅ Provisioned
 - **Redis**: ✅ Provisioned
-- **Worker Service**: ❌ Not yet added
+- **Worker Service**: ✅ Deployed and running
 
 ### Environment Variables Set
 - [x] DATABASE_URL
 - [x] REDIS_URL
 - [x] AUTH_SECRET
 - [x] AUTH_URL
-
-### Environment Variables Needed
-- [ ] AUTH_GITHUB_ID - GitHub OAuth app ID
-- [ ] AUTH_GITHUB_SECRET - GitHub OAuth app secret
-- [ ] OPENROUTER_API_KEY - For AI summaries
-- [ ] SERPER_API_KEY - For news search (optional, 2500 free/month)
+- [x] AUTH_GITHUB_ID
+- [x] AUTH_GITHUB_SECRET
+- [x] OPENROUTER_API_KEY
+- [x] SERPER_API_KEY
 
 ---
+
+## Completed Setup
+
+- [x] GitHub OAuth configured
+- [x] OpenRouter API key added
+- [x] Serper API key added
+- [x] Worker service deployed
+- [x] Database migrations applied
+- [x] Custom domain configured (research.dimitrov.im)
+
+## Features Working
+
+- [x] Homepage loads with papers from arXiv
+- [x] Paper detail page shows summary tabs
+- [x] Login with GitHub works
+- [x] Save paper functionality works
+- [x] Social mentions loading (Bluesky + Reddit)
+- [x] News tab loads
+- [x] Trending page (papers ranked by social engagement)
+- [x] Dark mode (follows system preference)
+- [x] Mobile responsive design
+- [x] Category filter tabs (AI, ML, NLP, Vision, Stats ML)
 
 ## Next Steps
 
-### 1. Set Up GitHub OAuth
-1. Go to https://github.com/settings/developers
-2. Click "New OAuth App"
-3. Set Homepage URL: `https://research-aggregator-production.up.railway.app`
-4. Set Callback URL: `https://research-aggregator-production.up.railway.app/api/auth/callback/github`
-5. Copy Client ID → `AUTH_GITHUB_ID`
-6. Generate secret → `AUTH_GITHUB_SECRET`
-
-*Note: Using GitHub OAuth only for now. Google OAuth can be added later if needed.*
-
-### 2. Set Up OpenRouter (AI Summaries)
-1. Go to https://openrouter.ai
-2. Create account and get API key
-3. Add to Railway: `OPENROUTER_API_KEY`
-
-### 3. Set Up Serper (News Search - Optional)
-1. Go to https://serper.dev
-2. Create account (2,500 free searches/month)
-3. Add to Railway: `SERPER_API_KEY`
-
-### 4. Add Worker Service on Railway
-1. In Railway, click "+ New" → "GitHub Repo"
-2. Select same `research-aggregator` repo
-3. Go to Settings → Change Start Command to: `npm run workers`
-4. Add same environment variables as web app
-
-### 5. Run Database Migration
-In Railway shell: `npm run db:push`
-
-### 6. Test Each Feature
-- [ ] Homepage loads with papers from arXiv
-- [ ] Paper detail page shows summary tabs
-- [ ] Login with GitHub works
-- [ ] Save paper functionality works
-- [ ] Social mentions load
-- [ ] News tab loads (if Serper configured)
-
----
-
-## Upcoming Features
-
-### GitHub Profile Discovery for Authors
-Automatically find and link GitHub profiles for paper authors/collaborators:
-- Search GitHub API for author names
-- Match against author affiliations and research areas
-- Display GitHub links on author profiles
-- Show author's open source contributions related to their papers
+### Potential Enhancements
+1. **Theme Toggle** - Add manual dark/light mode switch (currently auto)
+2. **Search** - Implement paper search functionality
+3. **GitHub Profile Discovery** - Auto-find GitHub profiles for authors
 
 ---
 
