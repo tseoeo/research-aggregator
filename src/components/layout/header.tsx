@@ -37,18 +37,6 @@ export function Header() {
           >
             Trending
           </Link>
-          <Link
-            href="/categories"
-            className="transition-colors hover:text-foreground/80 text-muted-foreground"
-          >
-            Categories
-          </Link>
-          <Link
-            href="/authors"
-            className="transition-colors hover:text-foreground/80 text-muted-foreground"
-          >
-            Authors
-          </Link>
         </nav>
 
         {/* Spacer */}
@@ -77,12 +65,6 @@ export function Header() {
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/trending">Trending</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/categories">Categories</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/authors">Authors</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
