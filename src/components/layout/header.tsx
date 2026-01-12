@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BookOpen, Menu, Search } from "lucide-react";
 import { HeaderAuth } from "@/components/auth/header-auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Header() {
   return (
@@ -55,11 +56,13 @@ export function Header() {
         <div className="flex-1" />
 
         {/* Right side actions */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1 sm:space-x-2">
           <Button variant="ghost" size="icon" className="hidden md:flex">
             <Search className="h-4 w-4" />
             <span className="sr-only">Search</span>
           </Button>
+
+          <ThemeToggle />
 
           <HeaderAuth />
 

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -22,19 +22,25 @@ export const metadata: Metadata = {
   keywords: ["AI", "machine learning", "research", "arxiv", "papers"],
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
       >
         <Providers>
           <Header />
-          <main className="flex-1 container py-6">{children}</main>
+          <main className="flex-1 container px-4 py-4 sm:px-6 sm:py-6">{children}</main>
           <Footer />
         </Providers>
       </body>

@@ -34,7 +34,7 @@ export function PaperCard({ paper }: PaperCardProps) {
 
   return (
     <Card className="group hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
+      <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-3">
         {/* Category and date */}
         <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
           <div className="flex items-center gap-2">
@@ -52,7 +52,7 @@ export function PaperCard({ paper }: PaperCardProps) {
 
         {/* Title */}
         <Link href={`/papers/${paper.id}`} className="block">
-          <h3 className="font-semibold text-lg leading-tight hover:text-primary transition-colors line-clamp-2">
+          <h3 className="font-semibold text-base sm:text-lg leading-tight hover:text-primary transition-colors line-clamp-2">
             {paper.title}
           </h3>
         </Link>
@@ -84,7 +84,7 @@ export function PaperCard({ paper }: PaperCardProps) {
         )}
       </CardHeader>
 
-      <CardContent className="pt-0">
+      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
         {/* Summary bullets */}
         {paper.summaryBullets && paper.summaryBullets.length > 0 && (
           <ul className="space-y-1 mb-4 text-sm text-muted-foreground">
