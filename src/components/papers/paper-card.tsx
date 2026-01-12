@@ -5,26 +5,20 @@ import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  ExternalLink,
-  FileText,
-  MessageCircle,
-} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ExternalLink, FileText } from "lucide-react";
 import { SaveButton } from "./save-button";
+import {
+  SummaryTab,
+  AbstractTab,
+  Eli5Tab,
+  SocialTab,
+  NewsTab,
+} from "./card-tabs";
+import type { Paper } from "./paper-list";
 
 interface PaperCardProps {
-  paper: {
-    id: string;
-    title: string;
-    abstract?: string | null;
-    publishedAt?: Date | null;
-    primaryCategory?: string | null;
-    summaryBullets?: string[] | null;
-    pdfUrl?: string | null;
-    externalId: string;
-    authors?: { name: string; id?: string }[];
-    mentionCount?: number;
-  };
+  paper: Paper;
 }
 
 export function PaperCard({ paper }: PaperCardProps) {
@@ -85,27 +79,53 @@ export function PaperCard({ paper }: PaperCardProps) {
       </CardHeader>
 
       <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
-        {/* Summary bullets */}
-        {paper.summaryBullets && paper.summaryBullets.length > 0 && (
-          <ul className="space-y-1 mb-4 text-sm text-muted-foreground">
-            {paper.summaryBullets.map((bullet, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <span className="text-primary mt-1.5 h-1.5 w-1.5 rounded-full bg-current flex-shrink-0" />
-                <span className="line-clamp-2">{bullet}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* Tabs for content */}
+        <Tabs defaultValue="summary" className="w-full">
+          <TabsList className="grid w-full grid-cols-5 h-8">
+            <TabsTrigger value="summary" className="text-xs">
+              Summary
+            </TabsTrigger>
+            <TabsTrigger value="abstract" className="text-xs">
+              Abstract
+            </TabsTrigger>
+            <TabsTrigger value="eli5" className="text-xs">
+              ELI5
+            </TabsTrigger>
+            <TabsTrigger value="social" className="text-xs">
+              Social
+              {paper.mentionCount ? ` (${paper.mentionCount})` : ""}
+            </TabsTrigger>
+            <TabsTrigger value="news" className="text-xs">
+              News
+              {paper.newsMentions?.length ? ` (${paper.newsMentions.length})` : ""}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Abstract fallback if no summary */}
-        {!paper.summaryBullets && paper.abstract && (
-          <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
-            {paper.abstract}
-          </p>
-        )}
+          <div className="mt-3 min-h-[100px] max-h-[200px] overflow-y-auto">
+            <TabsContent value="summary" className="mt-0">
+              <SummaryTab bullets={paper.summaryBullets} />
+            </TabsContent>
+
+            <TabsContent value="abstract" className="mt-0">
+              <AbstractTab abstract={paper.abstract} />
+            </TabsContent>
+
+            <TabsContent value="eli5" className="mt-0">
+              <Eli5Tab eli5={paper.summaryEli5} />
+            </TabsContent>
+
+            <TabsContent value="social" className="mt-0">
+              <SocialTab mentions={paper.socialMentions} />
+            </TabsContent>
+
+            <TabsContent value="news" className="mt-0">
+              <NewsTab news={paper.newsMentions} />
+            </TabsContent>
+          </div>
+        </Tabs>
 
         {/* Actions */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-4 pt-3 border-t">
           <div className="flex items-center gap-2">
             {paper.pdfUrl && (
               <Button variant="ghost" size="sm" asChild>
@@ -131,17 +151,7 @@ export function PaperCard({ paper }: PaperCardProps) {
             </Button>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Mention indicators */}
-            {paper.mentionCount !== undefined && paper.mentionCount > 0 && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <MessageCircle className="h-4 w-4" />
-                <span>{paper.mentionCount}</span>
-              </div>
-            )}
-
-            <SaveButton arxivId={paper.externalId} variant="ghost" />
-          </div>
+          <SaveButton arxivId={paper.externalId} variant="ghost" />
         </div>
       </CardContent>
     </Card>

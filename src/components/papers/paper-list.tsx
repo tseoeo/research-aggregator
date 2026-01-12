@@ -4,16 +4,42 @@ import { PaperCard } from "./paper-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
-interface Paper {
+export interface SocialMention {
+  id: string;
+  platformName: string;
+  authorHandle?: string | null;
+  authorName?: string | null;
+  content?: string | null;
+  url: string;
+  likes?: number | null;
+  reposts?: number | null;
+  replies?: number | null;
+  postedAt?: string | null;
+}
+
+export interface NewsMention {
+  id: string;
+  title: string;
+  snippet?: string | null;
+  url: string;
+  sourceName?: string | null;
+  publishedAt?: string | null;
+  imageUrl?: string | null;
+}
+
+export interface Paper {
   id: string;
   title: string;
   abstract?: string | null;
   publishedAt?: Date | null;
   primaryCategory?: string | null;
   summaryBullets?: string[] | null;
+  summaryEli5?: string | null;
   pdfUrl?: string | null;
   externalId: string;
   authors?: { name: string; id?: string }[];
+  socialMentions?: SocialMention[];
+  newsMentions?: NewsMention[];
   mentionCount?: number;
 }
 

@@ -14,7 +14,10 @@ import {
   createSocialMonitorWorker,
   createNewsWorker,
 } from "../lib/queue/workers";
-import { arxivFetchQueue } from "../lib/queue/queues";
+import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue } from "../lib/queue/queues";
+import { db } from "../lib/db";
+import { papers } from "../lib/db/schema";
+import { desc, gte } from "drizzle-orm";
 
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
@@ -60,6 +63,87 @@ async function scheduleJobs() {
   );
 
   console.log("[Scheduler] Queued initial arXiv fetch");
+
+  // Schedule daily refresh for social mentions and news
+  // This will re-fetch for papers from the last 7 days
+  scheduleDailyRefresh();
+}
+
+/**
+ * Schedule daily refresh of social mentions and news for recent papers
+ */
+async function scheduleDailyRefresh() {
+  // Run daily at midnight
+  const runDailyRefresh = async () => {
+    console.log("[DailyRefresh] Starting daily refresh of social mentions and news...");
+
+    try {
+      // Get papers from the last 7 days
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const recentPapers = await db
+        .select({
+          id: papers.id,
+          externalId: papers.externalId,
+          title: papers.title,
+        })
+        .from(papers)
+        .where(gte(papers.createdAt, sevenDaysAgo))
+        .orderBy(desc(papers.createdAt))
+        .limit(100);
+
+      console.log(`[DailyRefresh] Found ${recentPapers.length} papers to refresh`);
+
+      // Queue social monitor and news fetch jobs for each paper
+      for (let i = 0; i < recentPapers.length; i++) {
+        const paper = recentPapers[i];
+
+        // Queue social monitoring with delay to respect rate limits
+        await socialMonitorQueue.add(
+          "refresh-social",
+          {
+            paperId: paper.id,
+            arxivId: paper.externalId,
+            title: paper.title,
+          },
+          { delay: i * 3000 } // 3 seconds between each
+        );
+
+        // Queue news fetch with delay
+        await newsFetchQueue.add(
+          "refresh-news",
+          {
+            paperId: paper.id,
+            arxivId: paper.externalId,
+            title: paper.title,
+            priority: "low",
+          },
+          { delay: i * 5000 } // 5 seconds between each
+        );
+      }
+
+      console.log(`[DailyRefresh] Queued ${recentPapers.length} refresh jobs`);
+    } catch (error) {
+      console.error("[DailyRefresh] Error:", error);
+    }
+  };
+
+  // Calculate time until next midnight
+  const now = new Date();
+  const nextMidnight = new Date(now);
+  nextMidnight.setDate(nextMidnight.getDate() + 1);
+  nextMidnight.setHours(0, 0, 0, 0);
+  const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+
+  // Schedule first run at next midnight, then every 24 hours
+  setTimeout(() => {
+    runDailyRefresh();
+    // Then run every 24 hours
+    setInterval(runDailyRefresh, 24 * 60 * 60 * 1000);
+  }, msUntilMidnight);
+
+  console.log(`[Scheduler] Daily refresh scheduled (next run in ${Math.round(msUntilMidnight / 1000 / 60)} minutes)`);
 }
 
 /**
