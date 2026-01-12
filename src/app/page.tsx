@@ -2,34 +2,43 @@ import { Suspense } from "react";
 import { PaperList } from "@/components/papers/paper-list";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { arxivService } from "@/lib/services/arxiv";
+import { headers } from "next/headers";
 
-// Fetch papers directly from arXiv service with timeout
+// Fetch papers via internal API route
 async function getPapers(category?: string) {
   try {
-    // Add timeout to prevent infinite loading
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Timeout fetching papers")), 15000);
+    // Get the host from headers for internal API call
+    const headersList = await headers();
+    const host = headersList.get("host") || "localhost:3000";
+    const protocol = host.includes("localhost") ? "http" : "https";
+
+    const params = new URLSearchParams();
+    if (category) params.set("category", category);
+    params.set("limit", "20");
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetch(`${protocol}://${host}/api/papers?${params}`, {
+      cache: "no-store",
+      signal: controller.signal,
     });
 
-    const fetchPromise = arxivService.fetchRecentPapers(category || "cs.AI", 20);
-    const papers = await Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
 
-    // Transform to expected format
-    const transformedPapers = papers.map((paper) => ({
-      id: paper.arxivId,
-      externalId: paper.arxivId,
-      title: paper.title,
-      abstract: paper.abstract,
-      publishedAt: paper.publishedAt,
-      primaryCategory: paper.primaryCategory,
-      pdfUrl: paper.pdfUrl,
-      summaryBullets: null,
-      authors: paper.authors.map((a) => ({ name: a.name })),
-      mentionCount: 0,
+    if (!res.ok) {
+      throw new Error("Failed to fetch papers");
+    }
+
+    const data = await res.json();
+
+    // Transform dates from strings to Date objects
+    const papers = data.papers.map((paper: any) => ({
+      ...paper,
+      publishedAt: paper.publishedAt ? new Date(paper.publishedAt) : null,
     }));
 
-    return { papers: transformedPapers, pagination: { total: transformedPapers.length } };
+    return { papers, pagination: data.pagination };
   } catch (error) {
     console.error("Error fetching papers:", error);
     return { papers: [], pagination: { total: 0 } };
