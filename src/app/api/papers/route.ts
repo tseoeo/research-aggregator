@@ -8,7 +8,7 @@ import {
   newsMentions,
   socialPlatforms,
 } from "@/lib/db/schema";
-import { eq, desc, like, or, sql } from "drizzle-orm";
+import { eq, desc, like, or, sql, arrayContains } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
         like(papers.abstract, `%${search}%`)
       );
     } else {
-      whereCondition = eq(papers.primaryCategory, category);
+      // Check if category appears in the categories array (not just primary)
+      whereCondition = arrayContains(papers.categories, [category]);
     }
 
     // Query papers from database
