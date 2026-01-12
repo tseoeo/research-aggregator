@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bookmark, LogOut, Settings, User, Users } from "lucide-react";
+import { Bookmark, LogOut, Settings, Users } from "lucide-react";
 
 interface UserMenuProps {
   user: {
@@ -25,6 +25,7 @@ interface UserMenuProps {
 }
 
 export function UserMenu({ user }: UserMenuProps) {
+  const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -61,23 +62,17 @@ export function UserMenu({ user }: UserMenuProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/saved" className="cursor-pointer">
-            <Bookmark className="mr-2 h-4 w-4" />
-            Saved Papers
-          </Link>
+        <DropdownMenuItem onSelect={() => router.push("/saved")} className="cursor-pointer">
+          <Bookmark className="mr-2 h-4 w-4" />
+          Saved Papers
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/following" className="cursor-pointer">
-            <Users className="mr-2 h-4 w-4" />
-            Following
-          </Link>
+        <DropdownMenuItem onSelect={() => router.push("/following")} className="cursor-pointer">
+          <Users className="mr-2 h-4 w-4" />
+          Following
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings" className="cursor-pointer">
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
-          </Link>
+        <DropdownMenuItem onSelect={() => router.push("/settings")} className="cursor-pointer">
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

@@ -6,12 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Bookmark,
   ExternalLink,
   FileText,
   MessageCircle,
-  Twitter,
 } from "lucide-react";
+import { SaveButton } from "./save-button";
 
 interface PaperCardProps {
   paper: {
@@ -141,10 +140,7 @@ export function PaperCard({ paper }: PaperCardProps) {
               </div>
             )}
 
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Bookmark className="h-4 w-4" />
-              <span className="sr-only">Save paper</span>
-            </Button>
+            <SaveButton arxivId={paper.externalId} variant="ghost" />
           </div>
         </div>
       </CardContent>
