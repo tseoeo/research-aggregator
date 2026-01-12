@@ -15,7 +15,7 @@ async function getPapers(category?: string) {
       externalId: paper.arxivId,
       title: paper.title,
       abstract: paper.abstract,
-      publishedAt: paper.publishedAt.toISOString(),
+      publishedAt: paper.publishedAt,
       primaryCategory: paper.primaryCategory,
       pdfUrl: paper.pdfUrl,
       summaryBullets: null,
