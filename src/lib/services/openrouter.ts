@@ -40,7 +40,7 @@ export class OpenRouterService {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || "";
-    this.model = model || process.env.OPENROUTER_MODEL || "openai/chatgpt-4o-latest";
+    this.model = model || process.env.OPENROUTER_MODEL || "openai/gpt-5.1";
 
     if (!this.apiKey) {
       console.warn("OpenRouter API key not configured");
