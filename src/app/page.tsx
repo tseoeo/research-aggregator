@@ -2,26 +2,29 @@ import { Suspense } from "react";
 import { PaperList } from "@/components/papers/paper-list";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { arxivService } from "@/lib/services/arxiv";
 
-// Fetch papers on the server
+// Fetch papers directly from arXiv service (no HTTP roundtrip)
 async function getPapers(category?: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const params = new URLSearchParams();
-  if (category) params.set("category", category);
-  params.set("limit", "20");
-
   try {
-    const res = await fetch(`${baseUrl}/api/papers?${params}`, {
-      cache: "no-store",
-    });
+    const papers = await arxivService.fetchRecentPapers(category || "cs.AI", 20);
 
-    if (!res.ok) {
-      throw new Error("Failed to fetch papers");
-    }
+    // Transform to expected format
+    const transformedPapers = papers.map((paper) => ({
+      id: paper.arxivId,
+      externalId: paper.arxivId,
+      title: paper.title,
+      abstract: paper.abstract,
+      publishedAt: paper.publishedAt.toISOString(),
+      primaryCategory: paper.primaryCategory,
+      pdfUrl: paper.pdfUrl,
+      summaryBullets: null,
+      authors: paper.authors.map((a) => ({ name: a.name })),
+      mentionCount: 0,
+    }));
 
-    return res.json();
+    return { papers: transformedPapers, pagination: { total: transformedPapers.length } };
   } catch (error) {
-    // Fallback for when API isn't available yet
     console.error("Error fetching papers:", error);
     return { papers: [], pagination: { total: 0 } };
   }
