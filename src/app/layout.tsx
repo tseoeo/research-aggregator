@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans, DM_Mono, Instrument_Serif } from "next/font/google";
+import { DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Header } from "@/components/layout/header";
@@ -15,12 +15,6 @@ const dmMono = DM_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
   weight: ["400", "500"],
-});
-
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-serif",
-  subsets: ["latin"],
-  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -44,11 +38,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${dmSans.variable} ${dmMono.variable} ${instrumentSerif.variable} font-sans antialiased min-h-screen flex flex-col`}
+        className={`${dmSans.variable} ${dmMono.variable} font-sans antialiased min-h-screen flex flex-col`}
       >
         <Providers>
           <Header />
-          <main className="flex-1 container px-4 py-6 sm:px-6 sm:py-8 lg:py-10">{children}</main>
+          <main className="flex-1 container px-4 py-6 sm:px-6 sm:py-8 lg:py-10 2xl:max-w-[1600px]">{children}</main>
           <Footer />
         </Providers>
       </body>

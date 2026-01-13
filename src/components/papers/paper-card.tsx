@@ -41,7 +41,7 @@ export function PaperCard({ paper }: PaperCardProps) {
 
   return (
     <Card className="paper-card group border-border/50 hover:border-border hover:shadow-sm">
-      <CardHeader className="p-4 sm:p-6">
+      <CardHeader>
         {/* Top row: Category + Date + arXiv ID */}
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
@@ -101,7 +101,7 @@ export function PaperCard({ paper }: PaperCardProps) {
         )}
       </CardHeader>
 
-      <CardContent className="px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">
+      <CardContent>
         {/* Tabs for content */}
         <Tabs defaultValue="summary" className="w-full">
           <TabsList className="w-full h-10 p-1 bg-muted/50 gap-1">
