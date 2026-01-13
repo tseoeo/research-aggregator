@@ -1,43 +1,57 @@
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
 
 export function Footer() {
   return (
-    <footer className="border-t py-6 md:py-0">
-      <div className="container flex flex-col items-center justify-between gap-4 md:h-16 md:flex-row">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <BookOpen className="h-4 w-4" />
-          <span>Research Aggregator</span>
+    <footer className="border-t border-border/50 bg-muted/30">
+      <div className="container py-8 md:py-6">
+        <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
+          {/* Brand */}
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
+              <span className="heading-display text-sm text-primary">R</span>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              Research Aggregator
+            </span>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex items-center gap-6 text-sm">
+            <Link
+              href="/about"
+              className="text-muted-foreground hover:text-foreground transition-colors link-underline"
+            >
+              About
+            </Link>
+            <Link
+              href="/api"
+              className="text-muted-foreground hover:text-foreground transition-colors link-underline"
+            >
+              API
+            </Link>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground transition-colors link-underline"
+            >
+              GitHub
+            </a>
+          </nav>
+
+          {/* Attribution */}
+          <p className="text-xs text-muted-foreground/70">
+            Data from{" "}
+            <a
+              href="https://arxiv.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              arXiv.org
+            </a>
+          </p>
         </div>
-
-        <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-          <Link href="/about" className="hover:text-foreground transition-colors">
-            About
-          </Link>
-          <Link href="/api" className="hover:text-foreground transition-colors">
-            API
-          </Link>
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
-          >
-            GitHub
-          </a>
-        </nav>
-
-        <p className="text-xs text-muted-foreground">
-          Data from{" "}
-          <a
-            href="https://arxiv.org"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-foreground"
-          >
-            arXiv.org
-          </a>
-        </p>
       </div>
     </footer>
   );

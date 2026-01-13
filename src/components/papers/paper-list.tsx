@@ -3,6 +3,7 @@
 import { PaperCard } from "./paper-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { FileQuestion } from "lucide-react";
 
 export interface SocialMention {
   id: string;
@@ -61,14 +62,20 @@ export function PaperList({ papers, isLoading }: PaperListProps) {
 
   if (papers.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">No papers found.</p>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
+          <FileQuestion className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="heading-display text-xl mb-2">No papers found</h3>
+        <p className="text-muted-foreground text-sm max-w-sm">
+          Try adjusting your filters or check back later for new research.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 stagger-children">
       {papers.map((paper) => (
         <PaperCard key={paper.id} paper={paper} />
       ))}
@@ -78,32 +85,33 @@ export function PaperList({ papers, isLoading }: PaperListProps) {
 
 function PaperCardSkeleton() {
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2 mb-2">
-          <Skeleton className="h-5 w-16" />
+    <Card className="border-border/50">
+      <CardHeader className="p-5 pb-3 sm:p-6 sm:pb-4">
+        <div className="flex items-center gap-2.5 mb-3">
+          <Skeleton className="h-5 w-14 rounded-full" />
           <Skeleton className="h-4 w-24" />
         </div>
-        <Skeleton className="h-6 w-full" />
-        <Skeleton className="h-6 w-3/4 mt-1" />
-        <div className="flex gap-2 mt-2">
-          <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-7 w-full" />
+        <Skeleton className="h-7 w-3/4 mt-1" />
+        <div className="flex gap-2 mt-3">
           <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-20" />
           <Skeleton className="h-4 w-16" />
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="space-y-2 mb-4">
+      <CardContent className="px-5 pb-5 sm:px-6 sm:pb-6">
+        <Skeleton className="h-10 w-full rounded-lg mb-4" />
+        <div className="space-y-2.5 mb-4">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-3/4" />
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between pt-4 border-t border-border/50">
           <div className="flex gap-2">
-            <Skeleton className="h-8 w-16" />
-            <Skeleton className="h-8 w-16" />
+            <Skeleton className="h-8 w-16 rounded-md" />
+            <Skeleton className="h-8 w-16 rounded-md" />
           </div>
-          <Skeleton className="h-8 w-8" />
+          <Skeleton className="h-8 w-8 rounded-md" />
         </div>
       </CardContent>
     </Card>
