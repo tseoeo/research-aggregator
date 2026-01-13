@@ -34,7 +34,7 @@ export function Header() {
             <span className="heading-display text-lg tracking-tight">
               Research
             </span>
-            <span className="text-muted-foreground text-sm font-medium ml-1.5">
+            <span className="text-muted-foreground text-sm font-medium ml-2">
               Aggregator
             </span>
           </div>

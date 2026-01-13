@@ -40,11 +40,11 @@ export function PaperCard({ paper }: PaperCardProps) {
   const hasNews = paper.newsMentions && paper.newsMentions.length > 0;
 
   return (
-    <Card className="paper-card group border-border/50 hover:border-border transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
-      <CardHeader className="p-5 pb-3 sm:p-6 sm:pb-4">
+    <Card className="paper-card group border-border/50 hover:border-border hover:shadow-sm">
+      <CardHeader className="p-4 sm:p-6">
         {/* Top row: Category + Date + arXiv ID */}
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-2">
             {paper.primaryCategory && (
               <Badge
                 variant="secondary"
@@ -54,8 +54,8 @@ export function PaperCard({ paper }: PaperCardProps) {
               </Badge>
             )}
             {publishedDate && (
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3 w-3" />
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Calendar className="size-3" />
                 {publishedDate}
               </span>
             )}
@@ -74,7 +74,7 @@ export function PaperCard({ paper }: PaperCardProps) {
 
         {/* Authors */}
         {paper.authors && paper.authors.length > 0 && (
-          <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 mt-3 text-sm text-muted-foreground">
+          <div className="flex flex-wrap gap-x-2 gap-y-1 mt-4 text-sm text-muted-foreground">
             {paper.authors.slice(0, 4).map((author, idx) => (
               <span key={idx} className="inline-flex items-center">
                 {author.id ? (
@@ -101,44 +101,44 @@ export function PaperCard({ paper }: PaperCardProps) {
         )}
       </CardHeader>
 
-      <CardContent className="px-5 pb-5 sm:px-6 sm:pb-6">
+      <CardContent className="px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">
         {/* Tabs for content */}
         <Tabs defaultValue="summary" className="w-full">
-          <TabsList className="w-full h-10 p-1 bg-muted/50 gap-0.5">
+          <TabsList className="w-full h-10 p-1 bg-muted/50 gap-1">
             <TabsTrigger
               value="summary"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5"
+              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
             >
-              <ListTree className="h-3.5 w-3.5 hidden sm:block" />
+              <ListTree className="size-4 hidden sm:block" />
               Summary
             </TabsTrigger>
             <TabsTrigger
               value="abstract"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5"
+              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
             >
-              <BookOpen className="h-3.5 w-3.5 hidden sm:block" />
+              <BookOpen className="size-4 hidden sm:block" />
               Abstract
             </TabsTrigger>
             <TabsTrigger
               value="eli5"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5"
+              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
             >
-              <Lightbulb className="h-3.5 w-3.5 hidden sm:block" />
+              <Lightbulb className="size-4 hidden sm:block" />
               ELI5
             </TabsTrigger>
             <TabsTrigger
               value="social"
               className={cn(
-                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5",
+                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2",
                 hasSocial && "text-primary"
               )}
             >
-              <MessageCircle className="h-3.5 w-3.5 hidden sm:block" />
+              <MessageCircle className="size-4 hidden sm:block" />
               <span>Social</span>
               {hasSocial && (
                 <Badge
                   variant="secondary"
-                  className="ml-0.5 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
+                  className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
                 >
                   {paper.mentionCount}
                 </Badge>
@@ -147,16 +147,16 @@ export function PaperCard({ paper }: PaperCardProps) {
             <TabsTrigger
               value="news"
               className={cn(
-                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5",
+                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2",
                 hasNews && "text-primary"
               )}
             >
-              <Newspaper className="h-3.5 w-3.5 hidden sm:block" />
+              <Newspaper className="size-4 hidden sm:block" />
               <span>News</span>
               {hasNews && (
                 <Badge
                   variant="secondary"
-                  className="ml-0.5 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
+                  className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
                 >
                   {paper.newsMentions!.length}
                 </Badge>
@@ -189,7 +189,7 @@ export function PaperCard({ paper }: PaperCardProps) {
 
         {/* Actions */}
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/50">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {paper.pdfUrl && (
               <Button
                 variant="ghost"
@@ -202,7 +202,7 @@ export function PaperCard({ paper }: PaperCardProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <FileText className="h-4 w-4 mr-1.5" />
+                  <FileText className="size-4 mr-2" />
                   PDF
                 </a>
               </Button>
@@ -218,7 +218,7 @@ export function PaperCard({ paper }: PaperCardProps) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <ExternalLink className="h-4 w-4 mr-1.5" />
+                <ExternalLink className="size-4 mr-2" />
                 arXiv
               </a>
             </Button>

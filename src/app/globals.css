@@ -209,13 +209,15 @@
     @apply bg-clip-text text-transparent bg-gradient-to-r from-amber-200 to-amber-400;
   }
 
-  /* Subtle glow effect for primary elements */
+  /* Subtle glow effect for primary elements - refined per design principles */
   .glow-amber {
-    box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.3);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.1),
+                0 1px 3px rgba(245, 158, 11, 0.08);
   }
 
   .dark .glow-amber {
-    box-shadow: 0 0 30px -5px rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15),
+                0 1px 4px rgba(245, 158, 11, 0.1);
   }
 }
 
@@ -252,33 +254,10 @@
    COMPONENT ENHANCEMENTS
    ============================================ */
 @layer components {
-  /* Paper card hover effect */
+  /* Paper card - clean hover without decorative gradients */
   .paper-card {
-    @apply relative overflow-hidden transition-all duration-300;
-  }
-
-  .paper-card::before {
-    content: '';
-    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
-    background: linear-gradient(
-      135deg,
-      transparent 0%,
-      rgba(245, 158, 11, 0.03) 50%,
-      transparent 100%
-    );
-  }
-
-  .dark .paper-card::before {
-    background: linear-gradient(
-      135deg,
-      transparent 0%,
-      rgba(245, 158, 11, 0.05) 50%,
-      transparent 100%
-    );
-  }
-
-  .paper-card:hover::before {
-    @apply opacity-100;
+    @apply relative transition-all duration-200;
+    transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
   }
 
   /* Badge enhancements */
@@ -312,12 +291,12 @@
 }
 
 /* ============================================
-   ANIMATIONS
+   ANIMATIONS - 150ms micro, 200-250ms larger
    ============================================ */
 @layer utilities {
-  /* Subtle fade in */
+  /* Subtle fade in - 200ms per design principles */
   .animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
+    animation: fadeIn 0.2s cubic-bezier(0.25, 1, 0.5, 1);
   }
 
   @keyframes fadeIn {
@@ -331,21 +310,21 @@
     }
   }
 
-  /* Staggered children animation */
+  /* Staggered children animation - tighter timing */
   .stagger-children > * {
-    animation: fadeIn 0.4s ease-out backwards;
+    animation: fadeIn 0.2s cubic-bezier(0.25, 1, 0.5, 1) backwards;
   }
 
   .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-  .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
-  .stagger-children > *:nth-child(3) { animation-delay: 100ms; }
-  .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
-  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
-  .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
-  .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
-  .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
-  .stagger-children > *:nth-child(9) { animation-delay: 400ms; }
-  .stagger-children > *:nth-child(10) { animation-delay: 450ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 30ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 60ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 90ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 120ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 150ms; }
+  .stagger-children > *:nth-child(7) { animation-delay: 180ms; }
+  .stagger-children > *:nth-child(8) { animation-delay: 210ms; }
+  .stagger-children > *:nth-child(9) { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(10) { animation-delay: 270ms; }
 }
 
 /* ============================================
