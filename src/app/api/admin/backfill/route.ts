@@ -149,26 +149,52 @@ export async function POST(request: NextRequest) {
       const start = page * perPage;
       const maxResults = Math.min(perPage, targetCount - totalFetched);
 
-      const url = new URL(ARXIV_API_BASE);
-      url.searchParams.set("search_query", `(${categoryQuery})`);
-      url.searchParams.set("start", start.toString());
-      url.searchParams.set("max_results", maxResults.toString());
-      url.searchParams.set("sortBy", "submittedDate");
-      url.searchParams.set("sortOrder", "descending");
+      // Build URL manually to avoid issues
+      const queryStr = encodeURIComponent(`(${categoryQuery})`);
+      const apiUrl = `${ARXIV_API_BASE}?search_query=${queryStr}&start=${start}&max_results=${maxResults}&sortBy=submittedDate&sortOrder=descending`;
 
       console.log(`[Backfill] Fetching page ${page + 1}/${pages} (start=${start}, max=${maxResults})`);
+      console.log(`[Backfill] URL: ${apiUrl}`);
 
-      const response = await fetch(url.toString(), {
-        headers: { "User-Agent": "ResearchAggregator/1.0 (backfill)" },
-      });
+      let response;
+      try {
+        response = await fetch(apiUrl, {
+          headers: { "User-Agent": "ResearchAggregator/1.0 (backfill)" },
+        });
+      } catch (fetchError) {
+        console.error(`[Backfill] Fetch error:`, fetchError);
+        return NextResponse.json({
+          error: "Fetch failed",
+          details: String(fetchError),
+          url: apiUrl
+        }, { status: 500 });
+      }
 
       if (!response.ok) {
-        console.error(`[Backfill] arXiv API error: ${response.status}`);
-        break;
+        const errorText = await response.text();
+        console.error(`[Backfill] arXiv API error: ${response.status} - ${errorText}`);
+        return NextResponse.json({
+          error: "arXiv API error",
+          status: response.status,
+          details: errorText.substring(0, 500)
+        }, { status: 500 });
       }
 
       const xml = await response.text();
+      console.log(`[Backfill] Got XML response, length: ${xml.length}`);
+
+      if (xml.includes("Rate exceeded")) {
+        console.error(`[Backfill] Rate limited by arXiv`);
+        return NextResponse.json({
+          error: "Rate limited by arXiv API",
+          totalFetched,
+          newPapers: totalNew,
+          message: "Try again in a few minutes"
+        }, { status: 429 });
+      }
+
       const fetchedPapers = parseArxivXml(xml);
+      console.log(`[Backfill] Parsed ${fetchedPapers.length} papers from XML`);
       totalFetched += fetchedPapers.length;
 
       console.log(`[Backfill] Page ${page + 1}: fetched ${fetchedPapers.length} papers`);
