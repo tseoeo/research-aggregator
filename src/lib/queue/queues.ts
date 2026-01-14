@@ -77,6 +77,20 @@ export const newsFetchQueue = new Queue("news-fetch", {
   },
 });
 
+// Queue for DTL-P paper analysis
+export const analysisQueue = new Queue("paper-analysis", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 15000, // Longer backoff - analysis uses more tokens
+    },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
 // Export all queues for easy access
 export const queues = {
   arxivFetch: arxivFetchQueue,
@@ -84,4 +98,5 @@ export const queues = {
   socialDiscovery: socialDiscoveryQueue,
   socialMonitor: socialMonitorQueue,
   newsFetch: newsFetchQueue,
+  analysis: analysisQueue,
 };

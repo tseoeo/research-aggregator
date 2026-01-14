@@ -10,7 +10,7 @@ import { arxivService, AI_CATEGORIES } from "../../services/arxiv";
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { summaryQueue, socialMonitorQueue } from "../queues";
+import { summaryQueue, socialMonitorQueue, analysisQueue } from "../queues";
 
 interface ArxivFetchJob {
   category?: string;
@@ -116,9 +116,22 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
       },
       { delay: 2000 * newCount }
     );
+
+    // Queue for DTL-P analysis (after summary is done)
+    await analysisQueue.add(
+      "analyze-paper",
+      {
+        paperId: result[0].id,
+        title: paper.title,
+        abstract: paper.abstract,
+        authors: paper.authors.map((a) => a.name),
+        year: paper.publishedAt?.getFullYear(),
+      },
+      { delay: 3000 * newCount } // After summary job
+    );
   }
 
-  console.log(`[ArxivWorker] Added ${newCount} new papers`);
+  console.log(`[ArxivWorker] Added ${newCount} new papers (queued for summary + analysis)`);
 
   return { fetched: fetchedPapers.length, new: newCount };
 }
