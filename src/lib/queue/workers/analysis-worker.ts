@@ -129,11 +129,14 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
   let useCasesMapped = 0;
   for (const mapping of analysis.use_case_mapping) {
     try {
+      // Clean up use case name (model sometimes adds status suffix)
+      const cleanName = mapping.use_case_name.replace(/\s*\((active|provisional|deprecated)\)\s*$/i, '').trim();
+
       // Find taxonomy entry by name
       const taxonomyEntry = await db
         .select({ id: taxonomyEntries.id })
         .from(taxonomyEntries)
-        .where(eq(taxonomyEntries.name, mapping.use_case_name))
+        .where(eq(taxonomyEntries.name, cleanName))
         .limit(1);
 
       if (taxonomyEntry.length > 0) {
