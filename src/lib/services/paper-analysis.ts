@@ -301,7 +301,7 @@ Output JSON only, matching the schema exactly.`;
           { role: "user", content: userPrompt },
         ],
         temperature: 0.2, // Low temperature for consistency
-        max_tokens: 4000, // Analysis is detailed
+        max_tokens: 8000, // DTL-P analysis requires substantial output
         response_format: { type: "json_object" },
       }),
     });
