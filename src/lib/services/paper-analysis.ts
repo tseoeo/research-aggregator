@@ -179,8 +179,78 @@ Select 0-2 from: cost, reliability, speed, quality, risk, new_capability
 - prototype_candidate: Ready for internal POC/prototype
 - deployable_with_work: Could be deployed with reasonable engineering effort
 
-## Output Format
-Output valid JSON only. No markdown, no explanations, just the JSON object.`;
+## Required JSON Schema (follow EXACTLY)
+{
+  "role": "Primitive" | "Platform" | "Proof" | "Provocation",
+  "role_confidence": 0.0-1.0,
+  "time_to_value": "Now" | "Soon" | "Later" | "Unknown",
+  "time_to_value_confidence": 0.0-1.0,
+  "interestingness": {
+    "total_score": 0-12,
+    "tier": "low" | "moderate" | "high" | "very_high",
+    "checks": [
+      {
+        "check_id": "business_primitive_impact",
+        "score": 0 | 1 | 2,
+        "answer": "string explaining score",
+        "evidence_pointers": ["section/page refs"],
+        "notes": "optional"
+      },
+      // ... repeat for delta_specificity, comparison_credibility, real_world_plausibility, evidence_strength, failure_disclosure
+    ]
+  },
+  "business_primitives": {
+    "selected": ["cost" | "reliability" | "speed" | "quality" | "risk" | "new_capability"],
+    "justification": "string",
+    "evidence_pointers": ["refs"]
+  },
+  "key_numbers": [
+    {
+      "metric_name": "string",
+      "value": "string",
+      "direction": "up" | "down",
+      "baseline": "optional string",
+      "conditions": "string",
+      "evidence_pointer": "ref"
+    }
+  ],
+  "constraints": [
+    {
+      "constraint": "string",
+      "why_it_matters": "string",
+      "evidence_pointer": "ref"
+    }
+  ],
+  "failure_modes": [
+    {
+      "failure_mode": "string",
+      "why_it_matters": "string",
+      "evidence_pointer": "ref"
+    }
+  ],
+  "what_is_missing": ["string array of gaps"],
+  "readiness_level": "research_only" | "prototype_candidate" | "deployable_with_work",
+  "readiness_justification": "string",
+  "readiness_evidence_pointers": ["refs"],
+  "use_case_mapping": [
+    {
+      "use_case_id": "string",
+      "use_case_name": "string from taxonomy",
+      "fit_confidence": "low" | "med" | "high",
+      "because": "string",
+      "evidence_pointers": ["refs"]
+    }
+  ],
+  "taxonomy_proposals": [],
+  "public_views": {
+    "hook_sentence": "One compelling sentence",
+    "30s_summary": ["bullet1", "bullet2", "bullet3"],
+    "3m_summary": "2-3 paragraph summary",
+    "8m_operator_addendum": "optional technical details"
+  }
+}
+
+Output valid JSON only. No markdown, no explanations, just the JSON object matching this exact schema.`;
 
 // ============================================
 // SERVICE CLASS
