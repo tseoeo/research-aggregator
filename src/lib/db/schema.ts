@@ -10,6 +10,7 @@ import {
   jsonb,
   primaryKey,
   unique,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -66,6 +67,10 @@ export const papersRelations = relations(papers, ({ one, many }) => ({
   paperAuthors: many(paperAuthors),
   socialMentions: many(socialMentions),
   newsMentions: many(newsMentions),
+  cardAnalysis: one(paperCardAnalyses, {
+    fields: [papers.id],
+    references: [paperCardAnalyses.paperId],
+  }),
 }));
 
 // ============================================
@@ -347,6 +352,136 @@ export const apiUsage = pgTable("api_usage", {
 });
 
 // ============================================
+// DTL-P: TAXONOMY REGISTRY
+// ============================================
+
+export const taxonomyEntries = pgTable("taxonomy_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: varchar("type", { length: 50 }).notNull().default("use_case"), // 'use_case' for now
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  definition: text("definition"),
+  inclusions: text("inclusions").array(), // what this category includes
+  exclusions: text("exclusions").array(), // what this category excludes
+  examples: text("examples").array(), // 3 example use cases
+  synonyms: text("synonyms").array(), // alternative names
+  status: varchar("status", { length: 50 }).notNull().default("active"), // active | deprecated | provisional
+  parentId: uuid("parent_id"), // for future hierarchy (self-referencing)
+  usageCount: integer("usage_count").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const taxonomyEntriesRelations = relations(taxonomyEntries, ({ many }) => ({
+  paperMappings: many(paperUseCaseMappings),
+}));
+
+// ============================================
+// DTL-P: PAPER CARD ANALYSES
+// ============================================
+
+export const paperCardAnalyses = pgTable(
+  "paper_card_analyses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    paperId: uuid("paper_id")
+      .notNull()
+      .references(() => papers.id, { onDelete: "cascade" }),
+    analysisVersion: varchar("analysis_version", { length: 50 }).notNull().default("dtlp_v1"),
+
+    // Forced labels
+    role: varchar("role", { length: 50 }).notNull(), // Primitive | Platform | Proof | Provocation
+    roleConfidence: doublePrecision("role_confidence").notNull(),
+    timeToValue: varchar("time_to_value", { length: 50 }).notNull(), // Now | Soon | Later | Unknown
+    timeToValueConfidence: doublePrecision("time_to_value_confidence").notNull(),
+
+    // Interestingness scoring (JSONB for flexibility)
+    // { total_score: 0-12, tier: string, checks: [{check_id, score, answer, evidence_pointers, notes}] }
+    interestingness: jsonb("interestingness").notNull(),
+
+    // Business primitives
+    // { selected: string[], justification: string, evidence_pointers: string[] }
+    businessPrimitives: jsonb("business_primitives"),
+
+    // Key numbers (array of up to 3)
+    // [{ metric_name, value, direction, baseline, conditions, evidence_pointer }]
+    keyNumbers: jsonb("key_numbers"),
+
+    // Constraints (array of up to 3)
+    // [{ constraint, why_it_matters, evidence_pointer }]
+    constraints: jsonb("constraints"),
+
+    // Failure modes (array of up to 3)
+    // [{ failure_mode, why_it_matters, evidence_pointer }]
+    failureModes: jsonb("failure_modes"),
+
+    // What's missing
+    whatIsMissing: text("what_is_missing").array(),
+
+    // Readiness assessment
+    readinessLevel: varchar("readiness_level", { length: 50 }), // research_only | prototype_candidate | deployable_with_work
+    readinessJustification: text("readiness_justification"),
+    readinessEvidencePointers: text("readiness_evidence_pointers").array(),
+
+    // Public views (derived summaries)
+    // { hook_sentence, 30s_summary, 3m_summary, 8m_operator_addendum }
+    publicViews: jsonb("public_views"),
+
+    // Taxonomy proposals (if any new use-cases proposed)
+    // [{ type, proposed_name, definition, inclusions, exclusions, synonyms, examples, rationale }]
+    taxonomyProposals: jsonb("taxonomy_proposals"),
+
+    // Metadata
+    analysisModel: varchar("analysis_model", { length: 100 }),
+    tokensUsed: integer("tokens_used"),
+    errorMessage: text("error_message"), // if analysis failed
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [unique("paper_card_analyses_paper_id").on(table.paperId)]
+);
+
+export const paperCardAnalysesRelations = relations(paperCardAnalyses, ({ one, many }) => ({
+  paper: one(papers, {
+    fields: [paperCardAnalyses.paperId],
+    references: [papers.id],
+  }),
+  useCaseMappings: many(paperUseCaseMappings),
+}));
+
+// ============================================
+// DTL-P: PAPER-USE CASE MAPPINGS
+// ============================================
+
+export const paperUseCaseMappings = pgTable(
+  "paper_use_case_mappings",
+  {
+    analysisId: uuid("analysis_id")
+      .notNull()
+      .references(() => paperCardAnalyses.id, { onDelete: "cascade" }),
+    taxonomyEntryId: uuid("taxonomy_entry_id")
+      .notNull()
+      .references(() => taxonomyEntries.id, { onDelete: "cascade" }),
+    fitConfidence: varchar("fit_confidence", { length: 20 }).notNull(), // low | med | high
+    because: text("because").notNull(), // evidence-backed justification
+    evidencePointers: text("evidence_pointers").array(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.analysisId, table.taxonomyEntryId] })]
+);
+
+export const paperUseCaseMappingsRelations = relations(paperUseCaseMappings, ({ one }) => ({
+  analysis: one(paperCardAnalyses, {
+    fields: [paperUseCaseMappings.analysisId],
+    references: [paperCardAnalyses.id],
+  }),
+  taxonomyEntry: one(taxonomyEntries, {
+    fields: [paperUseCaseMappings.taxonomyEntryId],
+    references: [taxonomyEntries.id],
+  }),
+}));
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 
@@ -357,3 +492,11 @@ export type NewAuthor = typeof authors.$inferInsert;
 export type SocialMention = typeof socialMentions.$inferSelect;
 export type NewsMention = typeof newsMentions.$inferSelect;
 export type User = typeof users.$inferSelect;
+
+// DTL-P Types
+export type TaxonomyEntry = typeof taxonomyEntries.$inferSelect;
+export type NewTaxonomyEntry = typeof taxonomyEntries.$inferInsert;
+export type PaperCardAnalysis = typeof paperCardAnalyses.$inferSelect;
+export type NewPaperCardAnalysis = typeof paperCardAnalyses.$inferInsert;
+export type PaperUseCaseMapping = typeof paperUseCaseMappings.$inferSelect;
+export type NewPaperUseCaseMapping = typeof paperUseCaseMappings.$inferInsert;
