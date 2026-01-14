@@ -34,12 +34,12 @@ async function scheduleJobs() {
     await arxivFetchQueue.removeRepeatableByKey(job.key);
   }
 
-  // Add new repeatable job
+  // Add new repeatable job - fetch from ALL AI categories
   await arxivFetchQueue.add(
-    "fetch-cs-ai",
+    "fetch-all-ai",
     {
-      category: "cs.AI",
-      maxResults: 50,
+      useAllAICategories: true,
+      maxResults: 100, // Larger batch to catch all new papers
     },
     {
       repeat: {
@@ -48,21 +48,21 @@ async function scheduleJobs() {
     }
   );
 
-  console.log("[Scheduler] Scheduled arXiv fetch job (every 6 hours)");
+  console.log("[Scheduler] Scheduled arXiv fetch job for all AI categories (every 6 hours)");
 
   // Also run immediately on startup
   await arxivFetchQueue.add(
-    "fetch-cs-ai-startup",
+    "fetch-all-ai-startup",
     {
-      category: "cs.AI",
-      maxResults: 25, // Smaller batch for startup
+      useAllAICategories: true,
+      maxResults: 50, // Smaller batch for startup
     },
     {
       delay: 5000, // Wait 5 seconds for workers to be ready
     }
   );
 
-  console.log("[Scheduler] Queued initial arXiv fetch");
+  console.log("[Scheduler] Queued initial arXiv fetch for all AI categories");
 
   // Schedule daily refresh for social mentions and news
   // This will re-fetch for papers from the last 7 days

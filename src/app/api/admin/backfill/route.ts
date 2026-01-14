@@ -1,0 +1,286 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { papers, paperSources } from "@/lib/db/schema";
+import { summaryQueue, socialMonitorQueue, newsFetchQueue } from "@/lib/queue/queues";
+import { eq, and } from "drizzle-orm";
+import { AI_CATEGORIES } from "@/lib/services/arxiv";
+
+export const dynamic = "force-dynamic";
+
+const ARXIV_API_BASE = "https://export.arxiv.org/api/query";
+const RATE_LIMIT_MS = 3000;
+
+/**
+ * Parse arXiv XML to extract papers
+ */
+function parseArxivXml(xml: string) {
+  const papersData: Array<{
+    arxivId: string;
+    title: string;
+    abstract: string;
+    authors: Array<{ name: string; affiliation?: string }>;
+    categories: string[];
+    primaryCategory: string;
+    publishedAt: Date;
+    updatedAt: Date;
+    pdfUrl: string;
+  }> = [];
+
+  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+  let entryMatch;
+
+  while ((entryMatch = entryRegex.exec(xml)) !== null) {
+    const entry = entryMatch[1];
+
+    try {
+      const idMatch = entry.match(/<id>https?:\/\/arxiv\.org\/abs\/([^<]+)<\/id>/);
+      if (!idMatch) continue;
+      const arxivId = idMatch[1].trim();
+
+      const titleMatch = entry.match(/<title>([\s\S]*?)<\/title>/);
+      const title = titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim() : "";
+
+      const summaryMatch = entry.match(/<summary>([\s\S]*?)<\/summary>/);
+      const abstract = summaryMatch ? summaryMatch[1].replace(/\s+/g, " ").trim() : "";
+
+      const authors: Array<{ name: string; affiliation?: string }> = [];
+      const authorRegex = /<author>([\s\S]*?)<\/author>/g;
+      let authorMatch;
+      while ((authorMatch = authorRegex.exec(entry)) !== null) {
+        const authorEntry = authorMatch[1];
+        const nameMatch = authorEntry.match(/<name>([^<]+)<\/name>/);
+        const affiliationMatch = authorEntry.match(/<arxiv:affiliation[^>]*>([^<]+)<\/arxiv:affiliation>/);
+        if (nameMatch) {
+          authors.push({
+            name: nameMatch[1].trim(),
+            affiliation: affiliationMatch ? affiliationMatch[1].trim() : undefined,
+          });
+        }
+      }
+
+      const categories: string[] = [];
+      const categoryRegex = /<category[^>]*term="([^"]+)"[^>]*\/>/g;
+      let categoryMatch;
+      while ((categoryMatch = categoryRegex.exec(entry)) !== null) {
+        categories.push(categoryMatch[1]);
+      }
+
+      const primaryCategoryMatch = entry.match(/<arxiv:primary_category[^>]*term="([^"]+)"[^>]*\/>/);
+      const primaryCategory = primaryCategoryMatch ? primaryCategoryMatch[1] : categories[0] || "";
+
+      const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
+      const updatedMatch = entry.match(/<updated>([^<]+)<\/updated>/);
+      const publishedAt = publishedMatch ? new Date(publishedMatch[1]) : new Date();
+      const updatedAt = updatedMatch ? new Date(updatedMatch[1]) : publishedAt;
+
+      const pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+
+      papersData.push({
+        arxivId,
+        title,
+        abstract,
+        authors,
+        categories,
+        primaryCategory,
+        publishedAt,
+        updatedAt,
+        pdfUrl,
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return papersData;
+}
+
+/**
+ * Ensure arXiv source exists
+ */
+async function ensureArxivSource(): Promise<number> {
+  const existing = await db
+    .select({ id: paperSources.id })
+    .from(paperSources)
+    .where(eq(paperSources.name, "arxiv"))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0].id;
+
+  const result = await db
+    .insert(paperSources)
+    .values({ name: "arxiv", baseUrl: "https://arxiv.org", isActive: true })
+    .returning({ id: paperSources.id });
+
+  return result[0].id;
+}
+
+/**
+ * POST /api/admin/backfill
+ *
+ * Backfill papers from all AI categories with pagination.
+ * Query params:
+ * - secret: admin secret (required)
+ * - count: number of papers to fetch (default 500)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const secret = searchParams.get("secret");
+    const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
+
+    if (secret !== adminSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const targetCount = parseInt(searchParams.get("count") || "500", 10);
+    const perPage = 100; // arXiv API max per request
+    const pages = Math.ceil(targetCount / perPage);
+
+    console.log(`[Backfill] Starting backfill of ${targetCount} papers from all AI categories`);
+
+    const sourceId = await ensureArxivSource();
+    const categoryQuery = AI_CATEGORIES.map((c) => `cat:${c}`).join(" OR ");
+
+    let totalFetched = 0;
+    let totalNew = 0;
+    let queuedSummaries = 0;
+
+    for (let page = 0; page < pages; page++) {
+      const start = page * perPage;
+      const maxResults = Math.min(perPage, targetCount - totalFetched);
+
+      const url = new URL(ARXIV_API_BASE);
+      url.searchParams.set("search_query", `(${categoryQuery})`);
+      url.searchParams.set("start", start.toString());
+      url.searchParams.set("max_results", maxResults.toString());
+      url.searchParams.set("sortBy", "submittedDate");
+      url.searchParams.set("sortOrder", "descending");
+
+      console.log(`[Backfill] Fetching page ${page + 1}/${pages} (start=${start}, max=${maxResults})`);
+
+      const response = await fetch(url.toString(), {
+        headers: { "User-Agent": "ResearchAggregator/1.0 (backfill)" },
+      });
+
+      if (!response.ok) {
+        console.error(`[Backfill] arXiv API error: ${response.status}`);
+        break;
+      }
+
+      const xml = await response.text();
+      const fetchedPapers = parseArxivXml(xml);
+      totalFetched += fetchedPapers.length;
+
+      console.log(`[Backfill] Page ${page + 1}: fetched ${fetchedPapers.length} papers`);
+
+      // Process each paper
+      for (const paper of fetchedPapers) {
+        // Check if exists
+        const existing = await db
+          .select({ id: papers.id })
+          .from(papers)
+          .where(and(eq(papers.sourceId, sourceId), eq(papers.externalId, paper.arxivId)))
+          .limit(1);
+
+        if (existing.length > 0) continue;
+
+        // Insert new paper
+        const result = await db
+          .insert(papers)
+          .values({
+            sourceId,
+            externalId: paper.arxivId,
+            title: paper.title,
+            abstract: paper.abstract,
+            publishedAt: paper.publishedAt,
+            updatedAt: paper.updatedAt,
+            pdfUrl: paper.pdfUrl,
+            categories: paper.categories,
+            primaryCategory: paper.primaryCategory,
+          })
+          .returning({ id: papers.id });
+
+        totalNew++;
+
+        // Queue for summary generation (staggered)
+        await summaryQueue.add(
+          "backfill-summary",
+          {
+            paperId: result[0].id,
+            arxivId: paper.arxivId,
+            title: paper.title,
+            abstract: paper.abstract,
+          },
+          { delay: queuedSummaries * 2000 } // 2 seconds between each
+        );
+
+        // Queue for social monitoring
+        await socialMonitorQueue.add(
+          "backfill-social",
+          {
+            paperId: result[0].id,
+            arxivId: paper.arxivId,
+            title: paper.title,
+          },
+          { delay: queuedSummaries * 3000 }
+        );
+
+        // Queue for news
+        await newsFetchQueue.add(
+          "backfill-news",
+          {
+            paperId: result[0].id,
+            arxivId: paper.arxivId,
+            title: paper.title,
+            priority: "low",
+          },
+          { delay: queuedSummaries * 5000 }
+        );
+
+        queuedSummaries++;
+      }
+
+      // Rate limit between pages
+      if (page < pages - 1) {
+        await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_MS));
+      }
+    }
+
+    console.log(`[Backfill] Complete: fetched=${totalFetched}, new=${totalNew}, queued=${queuedSummaries}`);
+
+    return NextResponse.json({
+      success: true,
+      totalFetched,
+      newPapers: totalNew,
+      queuedJobs: queuedSummaries,
+      message: `Backfilled ${totalNew} new papers from ${AI_CATEGORIES.join(", ")}. ${queuedSummaries} jobs queued for AI summaries.`,
+    });
+  } catch (error) {
+    console.error("[Backfill] Error:", error);
+    return NextResponse.json({ error: "Backfill failed" }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/admin/backfill - Show backfill status/info
+ */
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const secret = searchParams.get("secret");
+  const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
+
+  if (secret !== adminSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return NextResponse.json({
+    endpoint: "POST /api/admin/backfill",
+    description: "Backfill papers from all AI categories",
+    params: {
+      secret: "ADMIN_SECRET (required)",
+      count: "Number of papers to fetch (default: 500)",
+    },
+    categories: AI_CATEGORIES,
+    example: "POST /api/admin/backfill?secret=xxx&count=500",
+  });
+}

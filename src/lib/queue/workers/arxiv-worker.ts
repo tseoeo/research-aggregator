@@ -6,15 +6,17 @@
 
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../../redis";
-import { arxivService } from "../../services/arxiv";
+import { arxivService, AI_CATEGORIES } from "../../services/arxiv";
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import { summaryQueue, socialMonitorQueue } from "../queues";
 
 interface ArxivFetchJob {
-  category: string;
+  category?: string;
+  categories?: readonly string[];
   maxResults?: number;
+  useAllAICategories?: boolean;
 }
 
 /**
@@ -44,11 +46,16 @@ async function ensureArxivSource(): Promise<number> {
 }
 
 async function processArxivFetch(job: Job<ArxivFetchJob>) {
-  const { category, maxResults = 50 } = job.data;
+  const { category, useAllAICategories = true, maxResults = 100 } = job.data;
 
-  console.log(`[ArxivWorker] Fetching papers for category: ${category}`);
-
-  const fetchedPapers = await arxivService.fetchRecentPapers(category, maxResults);
+  let fetchedPapers;
+  if (useAllAICategories) {
+    console.log(`[ArxivWorker] Fetching papers from all AI categories: ${AI_CATEGORIES.join(", ")}`);
+    fetchedPapers = await arxivService.fetchAIPapers(maxResults);
+  } else {
+    console.log(`[ArxivWorker] Fetching papers for category: ${category}`);
+    fetchedPapers = await arxivService.fetchRecentPapers(category || "cs.AI", maxResults);
+  }
 
   console.log(`[ArxivWorker] Found ${fetchedPapers.length} papers`);
 
