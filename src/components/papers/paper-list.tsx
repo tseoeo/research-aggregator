@@ -28,6 +28,19 @@ export interface NewsMention {
   imageUrl?: string | null;
 }
 
+export interface PaperAnalysis {
+  role: "Primitive" | "Platform" | "Proof" | "Provocation";
+  roleConfidence: number;
+  timeToValue: "Now" | "Soon" | "Later" | "Unknown";
+  timeToValueConfidence: number;
+  interestingness: {
+    total_score: number;
+    tier: "low" | "moderate" | "high" | "very_high";
+  };
+  readinessLevel: "research_only" | "prototype_candidate" | "deployable_with_work";
+  hookSentence?: string;
+}
+
 export interface Paper {
   id: string;
   title: string;
@@ -42,6 +55,7 @@ export interface Paper {
   socialMentions?: SocialMention[];
   newsMentions?: NewsMention[];
   mentionCount?: number;
+  analysis?: PaperAnalysis | null;
 }
 
 interface PaperListProps {

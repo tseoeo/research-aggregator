@@ -7,6 +7,7 @@ import {
   socialMentions,
   newsMentions,
   socialPlatforms,
+  paperCardAnalyses,
 } from "@/lib/db/schema";
 import { eq, desc, like, or, sql, arrayContains } from "drizzle-orm";
 
@@ -102,6 +103,23 @@ export async function GET(request: NextRequest) {
           .orderBy(desc(newsMentions.publishedAt))
           .limit(5);
 
+        // Get DTL-P analysis (lightweight for card display)
+        const analysisResult = await db
+          .select({
+            role: paperCardAnalyses.role,
+            roleConfidence: paperCardAnalyses.roleConfidence,
+            timeToValue: paperCardAnalyses.timeToValue,
+            timeToValueConfidence: paperCardAnalyses.timeToValueConfidence,
+            interestingness: paperCardAnalyses.interestingness,
+            readinessLevel: paperCardAnalyses.readinessLevel,
+            publicViews: paperCardAnalyses.publicViews,
+          })
+          .from(paperCardAnalyses)
+          .where(eq(paperCardAnalyses.paperId, paper.id))
+          .limit(1);
+
+        const analysis = analysisResult.length > 0 ? analysisResult[0] : null;
+
         return {
           id: paper.id,
           externalId: paper.externalId,
@@ -122,6 +140,16 @@ export async function GET(request: NextRequest) {
             publishedAt: n.publishedAt?.toISOString() || null,
           })),
           mentionCount: mentions.length,
+          // DTL-P analysis for card display
+          analysis: analysis ? {
+            role: analysis.role,
+            roleConfidence: analysis.roleConfidence,
+            timeToValue: analysis.timeToValue,
+            timeToValueConfidence: analysis.timeToValueConfidence,
+            interestingness: analysis.interestingness,
+            readinessLevel: analysis.readinessLevel,
+            hookSentence: (analysis.publicViews as { hook_sentence?: string })?.hook_sentence,
+          } : null,
         };
       })
     );

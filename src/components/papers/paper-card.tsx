@@ -26,6 +26,9 @@ import {
 } from "./card-tabs";
 import type { Paper } from "./paper-list";
 import { cn } from "@/lib/utils";
+import {
+  AnalysisBadgesRow,
+} from "./analysis-badges";
 
 interface PaperCardProps {
   paper: Paper;
@@ -96,6 +99,24 @@ export function PaperCard({ paper }: PaperCardProps) {
               <span className="text-muted-foreground/70 text-xs ml-1">
                 +{paper.authors.length - 4} more
               </span>
+            )}
+          </div>
+        )}
+
+        {/* DTL-P Analysis Badges */}
+        {paper.analysis && (
+          <div className="mt-4 space-y-2">
+            <AnalysisBadgesRow
+              role={paper.analysis.role}
+              timeToValue={paper.analysis.timeToValue}
+              interestTier={paper.analysis.interestingness.tier}
+              interestScore={paper.analysis.interestingness.total_score}
+              readinessLevel={paper.analysis.readinessLevel}
+            />
+            {paper.analysis.hookSentence && (
+              <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">
+                {paper.analysis.hookSentence}
+              </p>
             )}
           </div>
         )}

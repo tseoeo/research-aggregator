@@ -19,6 +19,7 @@ import { PaperSummary, PaperEli5 } from "@/components/papers/paper-summary";
 import { MentionList } from "@/components/mentions/mention-list";
 import { NewsList } from "@/components/news";
 import { AuthorsList } from "@/components/authors";
+import { AnalysisPanelLoader } from "@/components/papers/analysis-panel-loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -103,14 +104,26 @@ export default async function PaperDetailPage({ params }: PageProps) {
       <Separator />
 
       {/* Content tabs */}
-      <Tabs defaultValue="summary" className="space-y-4">
+      <Tabs defaultValue="analysis" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="analysis">Analysis</TabsTrigger>
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="abstract">Abstract</TabsTrigger>
           <TabsTrigger value="eli5">ELI5</TabsTrigger>
           <TabsTrigger value="social">Social</TabsTrigger>
           <TabsTrigger value="news">News</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="analysis" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">DTL-P Analysis</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnalysisPanelLoader paperId={paper.arxivId} />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="summary" className="space-y-4">
           <PaperSummary paperId={paper.arxivId} />
