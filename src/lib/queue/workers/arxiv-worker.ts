@@ -1,7 +1,14 @@
 /**
  * arXiv Fetch Worker
  *
- * Periodically fetches new papers from arXiv and queues them for processing.
+ * Periodically fetches new papers from arXiv.
+ *
+ * DECOUPLED ARCHITECTURE:
+ * - This worker ONLY handles paper ingestion (insert into DB)
+ * - AI processing (summaries, analysis) is triggered separately via admin endpoints
+ * - Social monitoring is still auto-queued (not AI, just social media checks)
+ *
+ * This ensures papers are always ingested even if AI services are down or out of credits.
  */
 
 import { Worker, Job } from "bullmq";
@@ -10,7 +17,7 @@ import { arxivService, AI_CATEGORIES } from "../../services/arxiv";
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { summaryQueue, socialMonitorQueue, analysisQueue } from "../queues";
+import { socialMonitorQueue } from "../queues";
 
 interface ArxivFetchJob {
   category?: string;
@@ -94,19 +101,7 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
 
     newCount++;
 
-    // Queue for summary generation
-    await summaryQueue.add(
-      "generate-summary",
-      {
-        paperId: result[0].id,
-        arxivId: paper.arxivId,
-        title: paper.title,
-        abstract: paper.abstract,
-      },
-      { delay: 1000 * newCount } // Stagger to avoid rate limits
-    );
-
-    // Queue for social monitoring
+    // Queue for social monitoring (not AI - just checks social media mentions)
     await socialMonitorQueue.add(
       "monitor-paper",
       {
@@ -114,24 +109,17 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
         arxivId: paper.arxivId,
         title: paper.title,
       },
-      { delay: 2000 * newCount }
+      { delay: 1000 * newCount } // Stagger to respect rate limits
     );
 
-    // Queue for DTL-P analysis (after summary is done)
-    await analysisQueue.add(
-      "analyze-paper",
-      {
-        paperId: result[0].id,
-        title: paper.title,
-        abstract: paper.abstract,
-        authors: paper.authors.map((a) => a.name),
-        year: paper.publishedAt?.getFullYear(),
-      },
-      { delay: 3000 * newCount } // After summary job
-    );
+    // NOTE: AI processing (summaries, analysis) is NOT auto-queued here.
+    // Use admin endpoints to trigger AI processing:
+    // - POST /api/admin/queue-summaries
+    // - POST /api/admin/queue-analyses
+    // - POST /api/admin/trigger-ai (both)
   }
 
-  console.log(`[ArxivWorker] Added ${newCount} new papers (queued for summary + analysis)`);
+  console.log(`[ArxivWorker] Added ${newCount} new papers (social monitoring queued, AI processing separate)`);
 
   return { fetched: fetchedPapers.length, new: newCount };
 }
