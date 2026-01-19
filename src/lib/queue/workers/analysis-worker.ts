@@ -25,6 +25,7 @@ export interface AnalysisJobData {
   authors?: string[];
   year?: number;
   force?: boolean; // Force re-analysis even if exists
+  model?: string; // Optional model override
 }
 
 export interface AnalysisJobResult {
@@ -43,9 +44,9 @@ export interface AnalysisJobResult {
  * Process a paper analysis job
  */
 async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJobResult> {
-  const { paperId, title, abstract, authors, year, force = false } = job.data;
+  const { paperId, title, abstract, authors, year, force = false, model: requestedModel } = job.data;
 
-  console.log(`[Analysis Worker] Processing paper: ${paperId}`);
+  console.log(`[Analysis Worker] Processing paper: ${paperId}${requestedModel ? ` with model: ${requestedModel}` : ''}`);
 
   // Check if analysis already exists (idempotency)
   if (!force) {
@@ -71,7 +72,7 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
     }
   }
 
-  const analysisService = new PaperAnalysisService();
+  const analysisService = new PaperAnalysisService(undefined, requestedModel);
 
   if (!analysisService.isConfigured()) {
     throw new Error("OpenRouter API key not configured");

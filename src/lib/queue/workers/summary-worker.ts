@@ -16,6 +16,7 @@ export interface SummaryJobData {
   paperId: string;
   title: string;
   abstract: string;
+  model?: string; // Optional model override
 }
 
 export interface SummaryJobResult {
@@ -30,11 +31,11 @@ export interface SummaryJobResult {
  * Process a summary generation job
  */
 async function processSummaryJob(job: Job<SummaryJobData>): Promise<SummaryJobResult> {
-  const { paperId, title, abstract } = job.data;
+  const { paperId, title, abstract, model } = job.data;
 
-  console.log(`[Summary Worker] Processing paper: ${paperId}`);
+  console.log(`[Summary Worker] Processing paper: ${paperId}${model ? ` with model: ${model}` : ''}`);
 
-  const openRouter = new OpenRouterService();
+  const openRouter = new OpenRouterService(undefined, model);
 
   if (!openRouter.isConfigured()) {
     throw new Error("OpenRouter API key not configured");
