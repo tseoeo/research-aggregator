@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ExternalLink,
   FileText,
@@ -15,6 +16,10 @@ import {
   Lightbulb,
   ListTree,
   Calendar,
+  BarChart3,
+  Briefcase,
+  AlertTriangle,
+  Target,
 } from "lucide-react";
 import { SaveButton } from "./save-button";
 import {
@@ -24,6 +29,13 @@ import {
   SocialTab,
   NewsTab,
 } from "./card-tabs";
+import {
+  AnalysisScoresTab,
+  AnalysisBusinessTab,
+  AnalysisRisksTab,
+  AnalysisUseCasesTab,
+  type PaperAnalysis,
+} from "./analysis-panel";
 import type { Paper } from "./paper-list";
 import { cn } from "@/lib/utils";
 import {
@@ -113,9 +125,9 @@ export function PaperCard({ paper }: PaperCardProps) {
               interestScore={paper.analysis.interestingness.total_score}
               readinessLevel={paper.analysis.readinessLevel}
             />
-            {paper.analysis.hookSentence && (
+            {(paper.analysis.publicViews as { hook_sentence?: string })?.hook_sentence && (
               <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">
-                {paper.analysis.hookSentence}
+                {(paper.analysis.publicViews as { hook_sentence?: string }).hook_sentence}
               </p>
             )}
           </div>
@@ -125,65 +137,100 @@ export function PaperCard({ paper }: PaperCardProps) {
       <CardContent>
         {/* Tabs for content */}
         <Tabs defaultValue="summary" className="w-full">
-          <TabsList className="w-full h-10 p-1 bg-muted/50 gap-1">
-            <TabsTrigger
-              value="summary"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
-            >
-              <ListTree className="size-4 hidden sm:block" />
-              Summary
-            </TabsTrigger>
-            <TabsTrigger
-              value="abstract"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
-            >
-              <BookOpen className="size-4 hidden sm:block" />
-              Abstract
-            </TabsTrigger>
-            <TabsTrigger
-              value="eli5"
-              className="flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2"
-            >
-              <Lightbulb className="size-4 hidden sm:block" />
-              ELI5
-            </TabsTrigger>
-            <TabsTrigger
-              value="social"
-              className={cn(
-                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2",
-                hasSocial && "text-primary"
+          <ScrollArea className="w-full whitespace-nowrap">
+            <TabsList className="w-full h-10 p-1 bg-muted/50 gap-1 inline-flex">
+              <TabsTrigger
+                value="summary"
+                className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+              >
+                <ListTree className="size-3.5 hidden sm:block" />
+                Summary
+              </TabsTrigger>
+              <TabsTrigger
+                value="abstract"
+                className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+              >
+                <BookOpen className="size-3.5 hidden sm:block" />
+                Abstract
+              </TabsTrigger>
+              <TabsTrigger
+                value="eli5"
+                className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+              >
+                <Lightbulb className="size-3.5 hidden sm:block" />
+                ELI5
+              </TabsTrigger>
+              {paper.analysis && (
+                <>
+                  <TabsTrigger
+                    value="scores"
+                    className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+                  >
+                    <BarChart3 className="size-3.5 hidden sm:block" />
+                    Scores
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="business"
+                    className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+                  >
+                    <Briefcase className="size-3.5 hidden sm:block" />
+                    Business
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="risks"
+                    className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+                  >
+                    <AlertTriangle className="size-3.5 hidden sm:block" />
+                    Risks
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="usecases"
+                    className="text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3"
+                  >
+                    <Target className="size-3.5 hidden sm:block" />
+                    Uses
+                  </TabsTrigger>
+                </>
               )}
-            >
-              <MessageCircle className="size-4 hidden sm:block" />
-              <span>Social</span>
-              {hasSocial && (
-                <Badge
-                  variant="secondary"
-                  className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
-                >
-                  {paper.mentionCount}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger
-              value="news"
-              className={cn(
-                "flex-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-2",
-                hasNews && "text-primary"
-              )}
-            >
-              <Newspaper className="size-4 hidden sm:block" />
-              <span>News</span>
-              {hasNews && (
-                <Badge
-                  variant="secondary"
-                  className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
-                >
-                  {paper.newsMentions!.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+              <TabsTrigger
+                value="social"
+                className={cn(
+                  "text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3",
+                  hasSocial && "text-primary"
+                )}
+              >
+                <MessageCircle className="size-3.5 hidden sm:block" />
+                <span>Social</span>
+                {hasSocial && (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
+                  >
+                    {paper.mentionCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="news"
+                className={cn(
+                  "text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5 px-2 sm:px-3",
+                  hasNews && "text-primary"
+                )}
+              >
+                <Newspaper className="size-3.5 hidden sm:block" />
+                <span>News</span>
+                {hasNews && (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 h-4 px-1 text-[10px] bg-primary/10 text-primary border-0"
+                  >
+                    {paper.newsMentions!.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
 
           <div className="mt-4 min-h-[120px] max-h-[180px] overflow-y-auto pr-1">
             <TabsContent value="summary" className="mt-0 animate-fade-in">
@@ -197,6 +244,26 @@ export function PaperCard({ paper }: PaperCardProps) {
             <TabsContent value="eli5" className="mt-0 animate-fade-in">
               <Eli5Tab eli5={paper.summaryEli5} />
             </TabsContent>
+
+            {paper.analysis && (
+              <>
+                <TabsContent value="scores" className="mt-0 animate-fade-in">
+                  <AnalysisScoresTab analysis={paper.analysis as PaperAnalysis} />
+                </TabsContent>
+
+                <TabsContent value="business" className="mt-0 animate-fade-in">
+                  <AnalysisBusinessTab analysis={paper.analysis as PaperAnalysis} />
+                </TabsContent>
+
+                <TabsContent value="risks" className="mt-0 animate-fade-in">
+                  <AnalysisRisksTab analysis={paper.analysis as PaperAnalysis} />
+                </TabsContent>
+
+                <TabsContent value="usecases" className="mt-0 animate-fade-in">
+                  <AnalysisUseCasesTab analysis={paper.analysis as PaperAnalysis} />
+                </TabsContent>
+              </>
+            )}
 
             <TabsContent value="social" className="mt-0 animate-fade-in">
               <SocialTab mentions={paper.socialMentions} />

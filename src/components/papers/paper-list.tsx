@@ -4,6 +4,7 @@ import { PaperCard } from "./paper-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FileQuestion } from "lucide-react";
+import type { PaperAnalysis } from "./analysis-panel";
 
 export interface SocialMention {
   id: string;
@@ -28,18 +29,7 @@ export interface NewsMention {
   imageUrl?: string | null;
 }
 
-export interface PaperAnalysis {
-  role: "Primitive" | "Platform" | "Proof" | "Provocation";
-  roleConfidence: number;
-  timeToValue: "Now" | "Soon" | "Later" | "Unknown";
-  timeToValueConfidence: number;
-  interestingness: {
-    total_score: number;
-    tier: "low" | "moderate" | "high" | "very_high";
-  };
-  readinessLevel: "research_only" | "prototype_candidate" | "deployable_with_work";
-  hookSentence?: string;
-}
+export type { PaperAnalysis };
 
 export interface Paper {
   id: string;

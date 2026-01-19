@@ -144,23 +144,23 @@ export function AnalysisPanel({ analysis, className }: AnalysisPanelProps) {
         </ScrollArea>
 
         <TabsContent value="summary" className="mt-4">
-          <SummaryTab analysis={analysis} />
+          <AnalysisSummaryTab analysis={analysis} />
         </TabsContent>
 
         <TabsContent value="scores" className="mt-4">
-          <ScoresTab analysis={analysis} />
+          <AnalysisScoresTab analysis={analysis} />
         </TabsContent>
 
         <TabsContent value="business" className="mt-4">
-          <BusinessTab analysis={analysis} />
+          <AnalysisBusinessTab analysis={analysis} />
         </TabsContent>
 
         <TabsContent value="risks" className="mt-4">
-          <RisksTab analysis={analysis} />
+          <AnalysisRisksTab analysis={analysis} />
         </TabsContent>
 
         <TabsContent value="usecases" className="mt-4">
-          <UseCasesTab analysis={analysis} />
+          <AnalysisUseCasesTab analysis={analysis} />
         </TabsContent>
       </Tabs>
     </div>
@@ -168,10 +168,10 @@ export function AnalysisPanel({ analysis, className }: AnalysisPanelProps) {
 }
 
 // ============================================
-// TAB COMPONENTS
+// TAB COMPONENTS (exported for reuse in paper-card)
 // ============================================
 
-function SummaryTab({ analysis }: { analysis: PaperAnalysis }) {
+export function AnalysisSummaryTab({ analysis }: { analysis: PaperAnalysis }) {
   const { publicViews } = analysis;
 
   return (
@@ -227,7 +227,7 @@ function SummaryTab({ analysis }: { analysis: PaperAnalysis }) {
   );
 }
 
-function ScoresTab({ analysis }: { analysis: PaperAnalysis }) {
+export function AnalysisScoresTab({ analysis }: { analysis: PaperAnalysis }) {
   const { interestingness } = analysis;
 
   const checkLabels: Record<string, { label: string; description: string }> = {
@@ -314,7 +314,7 @@ function ScoresTab({ analysis }: { analysis: PaperAnalysis }) {
   );
 }
 
-function BusinessTab({ analysis }: { analysis: PaperAnalysis }) {
+export function AnalysisBusinessTab({ analysis }: { analysis: PaperAnalysis }) {
   const { businessPrimitives, keyNumbers, readinessLevel, readinessJustification } = analysis;
 
   return (
@@ -390,7 +390,7 @@ function BusinessTab({ analysis }: { analysis: PaperAnalysis }) {
   );
 }
 
-function RisksTab({ analysis }: { analysis: PaperAnalysis }) {
+export function AnalysisRisksTab({ analysis }: { analysis: PaperAnalysis }) {
   const { constraints, failureModes, whatIsMissing } = analysis;
 
   return (
@@ -473,7 +473,7 @@ function RisksTab({ analysis }: { analysis: PaperAnalysis }) {
   );
 }
 
-function UseCasesTab({ analysis }: { analysis: PaperAnalysis }) {
+export function AnalysisUseCasesTab({ analysis }: { analysis: PaperAnalysis }) {
   const { useCaseMappings } = analysis;
 
   if (useCaseMappings.length === 0) {
