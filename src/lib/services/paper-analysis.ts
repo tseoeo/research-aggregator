@@ -26,7 +26,7 @@ const interestingnessCheckSchema = z.object({
     "failure_disclosure",
   ]),
   score: z.union([z.literal(0), z.literal(1), z.literal(2)]),
-  answer: z.string().min(1),
+  answer: z.string(),
   evidence_pointers: z.array(z.string()),
   notes: z.string().optional(),
 });
@@ -34,7 +34,7 @@ const interestingnessCheckSchema = z.object({
 const interestingnessSchema = z.object({
   total_score: z.number().int().min(0).max(12),
   tier: z.enum(["low", "moderate", "high", "very_high"]),
-  checks: z.array(interestingnessCheckSchema).length(6),
+  checks: z.array(interestingnessCheckSchema).min(1).max(6),
 });
 
 const businessPrimitivesSchema = z.object({
@@ -81,13 +81,13 @@ const taxonomyProposalSchema = z.object({
   inclusions: z.array(z.string()),
   exclusions: z.array(z.string()),
   synonyms: z.array(z.string()),
-  examples: z.array(z.string()).length(3),
+  examples: z.array(z.string()),
   rationale: z.string(),
 });
 
 const publicViewsSchema = z.object({
   hook_sentence: z.string(),
-  "30s_summary": z.array(z.string()).min(3).max(5),
+  "30s_summary": z.array(z.string()).min(1).max(5),
   "3m_summary": z.string(),
   "8m_operator_addendum": z.string().optional(),
 });
@@ -107,9 +107,169 @@ export const paperCardAnalysisResponseSchema = z.object({
   readiness_justification: z.string(),
   readiness_evidence_pointers: z.array(z.string()),
   use_case_mapping: z.array(useCaseMappingSchema).max(5),
-  taxonomy_proposals: z.array(taxonomyProposalSchema).max(1),
+  taxonomy_proposals: z.array(taxonomyProposalSchema),
   public_views: publicViewsSchema,
 });
+
+// ============================================
+// DATA NORMALIZATION (Pre-validation cleanup)
+// ============================================
+
+/**
+ * Normalize raw LLM response to match schema requirements.
+ * Handles common issues like null values, wrong types, etc.
+ */
+function normalizeAnalysisResponse(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+
+  const data = raw as Record<string, unknown>;
+
+  // Helper functions
+  const toArray = (val: unknown): unknown[] => {
+    if (val === null || val === undefined) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === "string") return [val];
+    return [];
+  };
+
+  const toString = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    if (Array.isArray(val)) return val.join(", ");
+    return String(val);
+  };
+
+  const toOptionalString = (val: unknown): string | undefined => {
+    if (val === null || val === undefined || val === "") return undefined;
+    if (Array.isArray(val)) return val.join(", ");
+    return String(val);
+  };
+
+  const normalizeDirection = (val: unknown): "up" | "down" => {
+    const v = String(val).toLowerCase();
+    if (["up", "higher", "increase", "positive", "+"].includes(v)) return "up";
+    if (["down", "lower", "decrease", "negative", "-"].includes(v)) return "down";
+    return "up";
+  };
+
+  const normalizeConfidence = (val: unknown): number => {
+    if (typeof val === "number") return Math.min(1, Math.max(0, val));
+    return 0.5;
+  };
+
+  const normalizeScore = (val: unknown): 0 | 1 | 2 => {
+    if (typeof val === "number") return Math.min(2, Math.max(0, Math.round(val))) as 0 | 1 | 2;
+    return 0;
+  };
+
+  const normalizeFitConfidence = (val: unknown): "low" | "med" | "high" => {
+    const v = String(val).toLowerCase();
+    if (["high", "h"].includes(v)) return "high";
+    if (["medium", "med", "m"].includes(v)) return "med";
+    return "low";
+  };
+
+  // Normalize interestingness checks
+  const normalizeCheck = (check: Record<string, unknown>) => ({
+    ...check,
+    score: normalizeScore(check.score),
+    answer: toString(check.answer),
+    evidence_pointers: toArray(check.evidence_pointers).map(toString),
+    notes: toOptionalString(check.notes),
+  });
+
+  // Normalize key numbers
+  const normalizeKeyNumber = (kn: Record<string, unknown>) => ({
+    metric_name: toString(kn.metric_name),
+    value: toString(kn.value),
+    direction: normalizeDirection(kn.direction),
+    baseline: toOptionalString(kn.baseline),
+    conditions: toString(kn.conditions),
+    evidence_pointer: toString(kn.evidence_pointer),
+  });
+
+  // Normalize constraints
+  const normalizeConstraint = (c: Record<string, unknown>) => ({
+    constraint: toString(c.constraint),
+    why_it_matters: toString(c.why_it_matters),
+    evidence_pointer: toString(c.evidence_pointer),
+  });
+
+  // Normalize failure modes
+  const normalizeFailureMode = (fm: Record<string, unknown>) => ({
+    failure_mode: toString(fm.failure_mode),
+    why_it_matters: toString(fm.why_it_matters),
+    evidence_pointer: toString(fm.evidence_pointer),
+  });
+
+  // Normalize use case mappings
+  const normalizeUseCaseMapping = (ucm: Record<string, unknown>) => ({
+    use_case_id: toString(ucm.use_case_id),
+    use_case_name: toString(ucm.use_case_name),
+    fit_confidence: normalizeFitConfidence(ucm.fit_confidence),
+    because: toString(ucm.because),
+    evidence_pointers: toArray(ucm.evidence_pointers).map(toString),
+  });
+
+  // Normalize taxonomy proposals
+  const normalizeTaxonomyProposal = (tp: Record<string, unknown>) => ({
+    type: "use_case" as const,
+    proposed_name: toString(tp.proposed_name),
+    definition: toString(tp.definition),
+    inclusions: toArray(tp.inclusions).map(toString),
+    exclusions: toArray(tp.exclusions).map(toString),
+    synonyms: toArray(tp.synonyms).map(toString),
+    examples: toArray(tp.examples).map(toString),
+    rationale: toString(tp.rationale),
+  });
+
+  // Normalize public views
+  const normalizePublicViews = (pv: Record<string, unknown>) => ({
+    hook_sentence: toString(pv?.hook_sentence),
+    "30s_summary": toArray(pv?.["30s_summary"]).map(toString),
+    "3m_summary": toString(pv?.["3m_summary"]),
+    "8m_operator_addendum": toOptionalString(pv?.["8m_operator_addendum"]),
+  });
+
+  // Build normalized object
+  const interestingness = data.interestingness as Record<string, unknown> | undefined;
+  const businessPrimitives = data.business_primitives as Record<string, unknown> | undefined;
+  const publicViews = data.public_views as Record<string, unknown> | undefined;
+
+  return {
+    role: data.role,
+    role_confidence: normalizeConfidence(data.role_confidence),
+    time_to_value: data.time_to_value,
+    time_to_value_confidence: normalizeConfidence(data.time_to_value_confidence),
+    interestingness: interestingness ? {
+      total_score: typeof interestingness.total_score === "number"
+        ? Math.min(12, Math.max(0, Math.round(interestingness.total_score)))
+        : 0,
+      tier: interestingness.tier,
+      checks: toArray(interestingness.checks).map((c) => normalizeCheck(c as Record<string, unknown>)),
+    } : data.interestingness,
+    business_primitives: businessPrimitives ? {
+      selected: toArray(businessPrimitives.selected),
+      justification: toString(businessPrimitives.justification),
+      evidence_pointers: toArray(businessPrimitives.evidence_pointers).map(toString),
+    } : data.business_primitives,
+    key_numbers: toArray(data.key_numbers).map((kn) => normalizeKeyNumber(kn as Record<string, unknown>)),
+    constraints: toArray(data.constraints).map((c) => normalizeConstraint(c as Record<string, unknown>)),
+    failure_modes: toArray(data.failure_modes).map((fm) => normalizeFailureMode(fm as Record<string, unknown>)),
+    what_is_missing: toArray(data.what_is_missing).map(toString),
+    readiness_level: data.readiness_level,
+    readiness_justification: toString(data.readiness_justification),
+    readiness_evidence_pointers: toArray(data.readiness_evidence_pointers).map(toString),
+    use_case_mapping: toArray(data.use_case_mapping).map((ucm) => normalizeUseCaseMapping(ucm as Record<string, unknown>)),
+    taxonomy_proposals: toArray(data.taxonomy_proposals)
+      .filter((tp) => {
+        const proposal = tp as Record<string, unknown>;
+        // Only include proposals that have at least a proposed_name
+        return proposal && proposal.proposed_name;
+      })
+      .map((tp) => normalizeTaxonomyProposal(tp as Record<string, unknown>)),
+    public_views: publicViews ? normalizePublicViews(publicViews) : data.public_views,
+  };
+}
 
 export type PaperCardAnalysisResponse = z.infer<typeof paperCardAnalysisResponseSchema>;
 
@@ -269,7 +429,7 @@ export class PaperAnalysisService {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || "";
-    this.model = model || process.env.OPENROUTER_MODEL || "openai/gpt-5.1";
+    this.model = model || process.env.OPENROUTER_MODEL || "z-ai/glm-4.7";
 
     if (!this.apiKey) {
       console.warn("[PaperAnalysis] OpenRouter API key not configured");
@@ -421,10 +581,14 @@ Output JSON only, matching the schema exactly.`;
       throw new Error(`Failed to parse OpenRouter response as JSON: ${content.substring(0, 500)}`);
     }
 
+    // Normalize the raw response to handle common LLM inconsistencies
+    const normalized = normalizeAnalysisResponse(parsed);
+
     // Validate with Zod
-    const validated = paperCardAnalysisResponseSchema.safeParse(parsed);
+    const validated = paperCardAnalysisResponseSchema.safeParse(normalized);
     if (!validated.success) {
       console.error("[PaperAnalysis] Validation errors:", validated.error.issues);
+      console.error("[PaperAnalysis] Normalized data:", JSON.stringify(normalized, null, 2).substring(0, 1000));
       // Try to salvage what we can - for now, throw
       throw new Error(
         `Response validation failed: ${validated.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`

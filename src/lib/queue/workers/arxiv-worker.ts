@@ -17,7 +17,7 @@ import { arxivService, AI_CATEGORIES, type ArxivPaper } from "../../services/arx
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { socialMonitorQueue } from "../queues";
+import { socialMonitorQueue, summaryQueue, analysisQueue } from "../queues";
 
 interface ArxivFetchJob {
   category?: string;
@@ -41,6 +41,8 @@ interface FetchResult {
   existingSkipped: number;
   byCategory: FetchStats[];
   socialMonitorQueued: number;
+  summaryJobsQueued: number;
+  analysisJobsQueued: number;
 }
 
 /**
@@ -167,6 +169,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
   let newCount = 0;
   let existingSkipped = 0;
   let socialMonitorQueued = 0;
+  let summaryJobsQueued = 0;
+  let analysisJobsQueued = 0;
 
   for (const paper of uniquePapers) {
     // Check if paper already exists in DB
@@ -199,19 +203,46 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
       })
       .returning({ id: papers.id });
 
+    const paperId = result[0].id;
     newCount++;
 
     // Queue for social monitoring (staggered to respect rate limits)
     await socialMonitorQueue.add(
       "monitor-paper",
       {
-        paperId: result[0].id,
+        paperId,
         arxivId: paper.arxivId,
         title: paper.title,
       },
       { delay: 1000 * newCount }
     );
     socialMonitorQueued++;
+
+    // Queue for summary generation (staggered - 2s between jobs)
+    await summaryQueue.add(
+      "generate-summary",
+      {
+        paperId,
+        arxivId: paper.arxivId,
+        title: paper.title,
+        abstract: paper.abstract,
+      },
+      { delay: 2000 * newCount }
+    );
+    summaryJobsQueued++;
+
+    // Queue for DTL-P analysis (staggered - 12s between jobs, analysis is expensive)
+    await analysisQueue.add(
+      "analyze-paper",
+      {
+        paperId,
+        title: paper.title,
+        abstract: paper.abstract,
+        year: paper.publishedAt?.getFullYear(),
+      },
+      { delay: 12000 * newCount }
+    );
+    analysisJobsQueued++;
   }
 
   const resultSummary: FetchResult = {
@@ -222,6 +253,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
     existingSkipped,
     byCategory: categoryStats,
     socialMonitorQueued,
+    summaryJobsQueued,
+    analysisJobsQueued,
   };
 
   console.log(`[ArxivWorker] Complete:`, JSON.stringify(resultSummary, null, 2));
@@ -238,7 +271,8 @@ export function createArxivWorker() {
   worker.on("completed", (job, result) => {
     console.log(
       `[ArxivWorker] Job ${job.id} completed: ` +
-      `${result.newPapers} new papers from ${result.uniquePapers} unique (${result.totalFetched} total fetched)`
+      `${result.newPapers} new papers from ${result.uniquePapers} unique (${result.totalFetched} total fetched), ` +
+      `queued: ${result.summaryJobsQueued} summaries, ${result.analysisJobsQueued} analyses`
     );
   });
 
