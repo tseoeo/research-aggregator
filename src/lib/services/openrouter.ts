@@ -98,7 +98,7 @@ Provide exactly 3 bullet points highlighting the main contributions and an ELI5 
           { role: "user", content: userPrompt },
         ],
         temperature: 0.3, // Lower temperature for more consistent output
-        max_tokens: 1000,
+        max_tokens: 2000,
         response_format: { type: "json_object" },
       }),
     });
