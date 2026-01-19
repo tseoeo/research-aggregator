@@ -91,6 +91,20 @@ export const analysisQueue = new Queue("paper-analysis", {
   },
 });
 
+// Queue for backfilling historical papers
+export const backfillQueue = new Queue("arxiv-backfill", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 10000, // 10s backoff for rate limiting
+    },
+    removeOnComplete: 50,
+    removeOnFail: 20,
+  },
+});
+
 // Export all queues for easy access
 export const queues = {
   arxivFetch: arxivFetchQueue,
@@ -99,4 +113,5 @@ export const queues = {
   socialMonitor: socialMonitorQueue,
   newsFetch: newsFetchQueue,
   analysis: analysisQueue,
+  backfill: backfillQueue,
 };

@@ -14,6 +14,7 @@ import {
   createSocialMonitorWorker,
   createNewsWorker,
   createAnalysisWorker,
+  createBackfillWorker,
 } from "../lib/queue/workers";
 import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue } from "../lib/queue/queues";
 import { db } from "../lib/db";
@@ -162,6 +163,7 @@ async function startWorkers() {
   workers.push(createSocialMonitorWorker());
   workers.push(createNewsWorker());
   workers.push(createAnalysisWorker());
+  workers.push(createBackfillWorker());
 
   console.log(`\n[Main] Started ${workers.length} workers`);
 

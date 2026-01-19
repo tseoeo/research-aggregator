@@ -356,6 +356,65 @@ export class ArxivService {
   }
 
   /**
+   * Fetch papers by date range for backfilling
+   * Uses arXiv's submittedDate filter: submittedDate:[YYYYMMDD0000 TO YYYYMMDD2359]
+   */
+  async fetchByDateRange(
+    startDate: Date,
+    endDate: Date,
+    category: string = "cs.AI",
+    options: { maxResults?: number; start?: number } = {}
+  ): Promise<{ papers: ArxivPaper[]; total: number }> {
+    await enforceRateLimit();
+
+    const { maxResults = 100, start = 0 } = options;
+
+    // Format dates for arXiv API: YYYYMMDDTTTT (TTTT = time, use 0000 and 2359)
+    const formatArxivDate = (date: Date, endOfDay: boolean = false): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const time = endOfDay ? "2359" : "0000";
+      return `${year}${month}${day}${time}`;
+    };
+
+    const startStr = formatArxivDate(startDate, false);
+    const endStr = formatArxivDate(endDate, true);
+
+    // Build query with date filter
+    const searchQuery = `cat:${category} AND submittedDate:[${startStr} TO ${endStr}]`;
+
+    const url = new URL(ARXIV_API_BASE);
+    url.searchParams.set("search_query", searchQuery);
+    url.searchParams.set("start", start.toString());
+    url.searchParams.set("max_results", maxResults.toString());
+    url.searchParams.set("sortBy", "submittedDate");
+    url.searchParams.set("sortOrder", "descending");
+
+    console.log(`[ArxivService] Fetching ${category} from ${startDate.toISOString().split("T")[0]} to ${endDate.toISOString().split("T")[0]}`);
+
+    const response = await fetchWithTimeout(url.toString(), {
+      headers: {
+        "User-Agent": "ResearchAggregator/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`arXiv API error: ${response.status} ${response.statusText}`);
+    }
+
+    const xml = await response.text();
+
+    // Extract total results from opensearch:totalResults
+    const totalMatch = xml.match(/<opensearch:totalResults[^>]*>(\d+)<\/opensearch:totalResults>/);
+    const total = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+
+    const papers = parseArxivXml(xml);
+
+    return { papers, total };
+  }
+
+  /**
    * Fetch papers with pagination support
    */
   async fetchPapersPaginated(

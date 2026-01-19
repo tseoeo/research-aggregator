@@ -9,3 +9,4 @@ export { createSummaryWorker } from "./summary-worker";
 export { createSocialMonitorWorker } from "./social-monitor-worker";
 export { createNewsWorker } from "./news-worker";
 export { createAnalysisWorker } from "./analysis-worker";
+export { createBackfillWorker } from "./backfill-worker";
