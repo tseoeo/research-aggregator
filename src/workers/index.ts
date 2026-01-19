@@ -36,34 +36,35 @@ async function scheduleJobs() {
   }
 
   // Add new repeatable job - fetch from ALL AI categories
+  // Schedule: Once daily at 22:00 UTC (1 hour after arXiv publishes new papers)
   await arxivFetchQueue.add(
     "fetch-all-ai",
     {
       useAllAICategories: true,
-      maxResults: 100, // Larger batch to catch all new papers
+      maxResults: 200, // Increased to catch all new papers (AI categories can have 150-300/day)
     },
     {
       repeat: {
-        pattern: "0 */6 * * *", // Every 6 hours
+        pattern: "0 22 * * *", // Daily at 22:00 UTC (after arXiv publishes at ~21:00 UTC)
       },
     }
   );
 
-  console.log("[Scheduler] Scheduled arXiv fetch job for all AI categories (every 6 hours)");
+  console.log("[Scheduler] Scheduled arXiv fetch job for all AI categories (daily at 22:00 UTC)");
 
   // Also run immediately on startup
   await arxivFetchQueue.add(
     "fetch-all-ai-startup",
     {
       useAllAICategories: true,
-      maxResults: 50, // Smaller batch for startup
+      maxResults: 200, // Same as scheduled fetch to ensure we don't miss papers
     },
     {
       delay: 5000, // Wait 5 seconds for workers to be ready
     }
   );
 
-  console.log("[Scheduler] Queued initial arXiv fetch for all AI categories");
+  console.log("[Scheduler] Queued initial arXiv fetch for all AI categories (200 papers)");
 
   // Schedule daily refresh for social mentions and news
   // This will re-fetch for papers from the last 7 days

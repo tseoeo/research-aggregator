@@ -45,7 +45,7 @@ export const AI_CATEGORIES = [
 
 const ARXIV_API_BASE = "https://export.arxiv.org/api/query";
 const RATE_LIMIT_MS = 3000; // 3 seconds between requests
-const FETCH_TIMEOUT_MS = 10000; // 10 second timeout for API calls
+const FETCH_TIMEOUT_MS = 30000; // 30 second timeout for API calls (increased from 10s)
 
 let lastRequestTime = 0;
 
