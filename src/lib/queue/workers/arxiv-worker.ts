@@ -1,19 +1,19 @@
 /**
  * arXiv Fetch Worker
  *
- * Periodically fetches new papers from arXiv.
+ * Fetches papers from arXiv using per-category fetching with pagination.
  *
- * DECOUPLED ARCHITECTURE:
- * - This worker ONLY handles paper ingestion (insert into DB)
- * - AI processing (summaries, analysis) is triggered separately via admin endpoints
- * - Social monitoring is still auto-queued (not AI, just social media checks)
- *
- * This ensures papers are always ingested even if AI services are down or out of credits.
+ * ARCHITECTURE:
+ * - Fetches each AI category SEPARATELY (more reliable than OR queries)
+ * - Uses pagination to get ALL papers (not just first 100)
+ * - Deduplicates across categories (same paper can appear in cs.AI and cs.LG)
+ * - Only handles paper ingestion (AI processing is triggered separately)
+ * - Social monitoring is auto-queued (not AI, just social media checks)
  */
 
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../../redis";
-import { arxivService, AI_CATEGORIES } from "../../services/arxiv";
+import { arxivService, AI_CATEGORIES, type ArxivPaper } from "../../services/arxiv";
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
@@ -24,6 +24,23 @@ interface ArxivFetchJob {
   categories?: readonly string[];
   maxResults?: number;
   useAllAICategories?: boolean;
+  maxPagesPerCategory?: number; // Limit pagination depth
+}
+
+interface FetchStats {
+  category: string;
+  fetched: number;
+  pages: number;
+}
+
+interface FetchResult {
+  totalFetched: number;
+  uniquePapers: number;
+  newPapers: number;
+  duplicatesSkipped: number;
+  existingSkipped: number;
+  byCategory: FetchStats[];
+  socialMonitorQueued: number;
 }
 
 /**
@@ -52,25 +69,107 @@ async function ensureArxivSource(): Promise<number> {
   return result[0].id;
 }
 
-async function processArxivFetch(job: Job<ArxivFetchJob>) {
-  const { category, useAllAICategories = true, maxResults = 100 } = job.data;
+/**
+ * Fetch all papers from a single category with pagination
+ */
+async function fetchCategoryWithPagination(
+  category: string,
+  maxPages: number = 5,
+  perPage: number = 100
+): Promise<{ papers: ArxivPaper[]; stats: FetchStats }> {
+  const allPapers: ArxivPaper[] = [];
+  let page = 0;
+  let hasMore = true;
 
-  let fetchedPapers;
-  if (useAllAICategories) {
-    console.log(`[ArxivWorker] Fetching papers from all AI categories: ${AI_CATEGORIES.join(", ")}`);
-    fetchedPapers = await arxivService.fetchAIPapers(maxResults);
-  } else {
-    console.log(`[ArxivWorker] Fetching papers for category: ${category}`);
-    fetchedPapers = await arxivService.fetchRecentPapers(category || "cs.AI", maxResults);
+  console.log(`[ArxivWorker] Fetching category ${category} with pagination...`);
+
+  while (hasMore && page < maxPages) {
+    try {
+      const result = await arxivService.fetchPapersPaginated(category, page, perPage);
+      allPapers.push(...result.papers);
+      hasMore = result.hasMore;
+      page++;
+
+      console.log(`[ArxivWorker] ${category} page ${page}: ${result.papers.length} papers (hasMore: ${hasMore})`);
+
+      // If we got fewer papers than requested, we've reached the end
+      if (result.papers.length < perPage) {
+        hasMore = false;
+      }
+    } catch (error) {
+      console.error(`[ArxivWorker] Error fetching ${category} page ${page}:`, error);
+      // Continue with what we have rather than failing completely
+      break;
+    }
   }
 
-  console.log(`[ArxivWorker] Found ${fetchedPapers.length} papers`);
+  return {
+    papers: allPapers,
+    stats: {
+      category,
+      fetched: allPapers.length,
+      pages: page,
+    },
+  };
+}
 
+/**
+ * Process arXiv fetch job - fetches each category separately with pagination
+ */
+async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> {
+  const {
+    category,
+    useAllAICategories = true,
+    maxPagesPerCategory = 3, // Default: 3 pages per category (300 papers max per category)
+  } = job.data;
+
+  const categoriesToFetch = useAllAICategories
+    ? [...AI_CATEGORIES]
+    : category
+    ? [category]
+    : ["cs.AI"];
+
+  console.log(`[ArxivWorker] Starting fetch for categories: ${categoriesToFetch.join(", ")}`);
+  console.log(`[ArxivWorker] Max pages per category: ${maxPagesPerCategory}`);
+
+  // Track unique papers across categories (same paper can be in cs.AI and cs.LG)
+  const seenArxivIds = new Set<string>();
+  const uniquePapers: ArxivPaper[] = [];
+  const categoryStats: FetchStats[] = [];
+  let totalFetched = 0;
+  let duplicatesSkipped = 0;
+
+  // Fetch each category separately
+  for (const cat of categoriesToFetch) {
+    const { papers: categoryPapers, stats } = await fetchCategoryWithPagination(
+      cat,
+      maxPagesPerCategory
+    );
+
+    categoryStats.push(stats);
+    totalFetched += categoryPapers.length;
+
+    // Deduplicate across categories
+    for (const paper of categoryPapers) {
+      if (!seenArxivIds.has(paper.arxivId)) {
+        seenArxivIds.add(paper.arxivId);
+        uniquePapers.push(paper);
+      } else {
+        duplicatesSkipped++;
+      }
+    }
+  }
+
+  console.log(`[ArxivWorker] Total fetched: ${totalFetched}, Unique: ${uniquePapers.length}, Cross-category duplicates: ${duplicatesSkipped}`);
+
+  // Insert papers into database
   const sourceId = await ensureArxivSource();
   let newCount = 0;
+  let existingSkipped = 0;
+  let socialMonitorQueued = 0;
 
-  for (const paper of fetchedPapers) {
-    // Check if paper already exists
+  for (const paper of uniquePapers) {
+    // Check if paper already exists in DB
     const existing = await db
       .select({ id: papers.id })
       .from(papers)
@@ -80,7 +179,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
       .limit(1);
 
     if (existing.length > 0) {
-      continue; // Skip existing paper
+      existingSkipped++;
+      continue;
     }
 
     // Insert new paper
@@ -101,7 +201,7 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
 
     newCount++;
 
-    // Queue for social monitoring (not AI - just checks social media mentions)
+    // Queue for social monitoring (staggered to respect rate limits)
     await socialMonitorQueue.add(
       "monitor-paper",
       {
@@ -109,24 +209,42 @@ async function processArxivFetch(job: Job<ArxivFetchJob>) {
         arxivId: paper.arxivId,
         title: paper.title,
       },
-      { delay: 1000 * newCount } // Stagger to respect rate limits
+      { delay: 1000 * newCount }
     );
-
-    // NOTE: AI processing (summaries, analysis) is NOT auto-queued here.
-    // Use admin endpoints to trigger AI processing:
-    // - POST /api/admin/queue-summaries
-    // - POST /api/admin/queue-analyses
-    // - POST /api/admin/trigger-ai (both)
+    socialMonitorQueued++;
   }
 
-  console.log(`[ArxivWorker] Added ${newCount} new papers (social monitoring queued, AI processing separate)`);
+  const resultSummary: FetchResult = {
+    totalFetched,
+    uniquePapers: uniquePapers.length,
+    newPapers: newCount,
+    duplicatesSkipped,
+    existingSkipped,
+    byCategory: categoryStats,
+    socialMonitorQueued,
+  };
 
-  return { fetched: fetchedPapers.length, new: newCount };
+  console.log(`[ArxivWorker] Complete:`, JSON.stringify(resultSummary, null, 2));
+
+  return resultSummary;
 }
 
 export function createArxivWorker() {
-  return new Worker("arxiv-fetch", processArxivFetch, {
+  const worker = new Worker("arxiv-fetch", processArxivFetch, {
     connection: redisConnection,
     concurrency: 1, // One at a time to respect rate limits
   });
+
+  worker.on("completed", (job, result) => {
+    console.log(
+      `[ArxivWorker] Job ${job.id} completed: ` +
+      `${result.newPapers} new papers from ${result.uniquePapers} unique (${result.totalFetched} total fetched)`
+    );
+  });
+
+  worker.on("failed", (job, err) => {
+    console.error(`[ArxivWorker] Job ${job?.id} failed:`, err.message);
+  });
+
+  return worker;
 }
