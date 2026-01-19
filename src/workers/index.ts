@@ -16,10 +16,10 @@ import {
   createAnalysisWorker,
   createBackfillWorker,
 } from "../lib/queue/workers";
-import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue } from "../lib/queue/queues";
+import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue } from "../lib/queue/queues";
 import { db } from "../lib/db";
-import { papers } from "../lib/db/schema";
-import { desc, gte } from "drizzle-orm";
+import { papers, paperCardAnalyses } from "../lib/db/schema";
+import { desc, gte, isNull, eq } from "drizzle-orm";
 
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
@@ -150,6 +150,79 @@ async function scheduleDailyRefresh() {
 }
 
 /**
+ * Backfill existing papers that are missing summaries or analyses
+ */
+async function backfillMissingAI() {
+  console.log("[Backfill] Checking for papers missing summaries or analyses...");
+
+  try {
+    // Find papers without summaries (limit to recent 50 to avoid overwhelming the queue)
+    const papersWithoutSummaries = await db
+      .select({
+        id: papers.id,
+        externalId: papers.externalId,
+        title: papers.title,
+        abstract: papers.abstract,
+      })
+      .from(papers)
+      .where(isNull(papers.summaryGeneratedAt))
+      .orderBy(desc(papers.createdAt))
+      .limit(50);
+
+    console.log(`[Backfill] Found ${papersWithoutSummaries.length} papers without summaries`);
+
+    // Queue summary jobs with staggered delays
+    for (let i = 0; i < papersWithoutSummaries.length; i++) {
+      const paper = papersWithoutSummaries[i];
+      await summaryQueue.add(
+        "backfill-summary",
+        {
+          paperId: paper.id,
+          title: paper.title,
+          abstract: paper.abstract,
+        },
+        { delay: i * 3000 } // 3s between jobs
+      );
+    }
+
+    // Find papers without analyses
+    const papersWithoutAnalyses = await db
+      .select({
+        id: papers.id,
+        title: papers.title,
+        abstract: papers.abstract,
+        publishedAt: papers.publishedAt,
+      })
+      .from(papers)
+      .leftJoin(paperCardAnalyses, eq(papers.id, paperCardAnalyses.paperId))
+      .where(isNull(paperCardAnalyses.id))
+      .orderBy(desc(papers.createdAt))
+      .limit(50);
+
+    console.log(`[Backfill] Found ${papersWithoutAnalyses.length} papers without analyses`);
+
+    // Queue analysis jobs with staggered delays (longer delay - analysis is expensive)
+    for (let i = 0; i < papersWithoutAnalyses.length; i++) {
+      const paper = papersWithoutAnalyses[i];
+      await analysisQueue.add(
+        "backfill-analysis",
+        {
+          paperId: paper.id,
+          title: paper.title,
+          abstract: paper.abstract,
+          year: paper.publishedAt?.getFullYear(),
+        },
+        { delay: i * 15000 } // 15s between jobs (analysis uses more tokens)
+      );
+    }
+
+    console.log(`[Backfill] Queued ${papersWithoutSummaries.length} summaries and ${papersWithoutAnalyses.length} analyses`);
+  } catch (error) {
+    console.error("[Backfill] Error:", error);
+  }
+}
+
+/**
  * Start all workers
  */
 async function startWorkers() {
@@ -169,6 +242,9 @@ async function startWorkers() {
 
   // Schedule recurring jobs
   await scheduleJobs();
+
+  // Backfill missing summaries and analyses on startup
+  await backfillMissingAI();
 
   console.log("[Main] All workers running\n");
 }
