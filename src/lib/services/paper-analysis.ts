@@ -256,6 +256,13 @@ Output valid JSON only. No markdown, no explanations, just the JSON object match
 // SERVICE CLASS
 // ============================================
 
+// Models that support response_format: { type: "json_object" }
+const JSON_MODE_SUPPORTED_PREFIXES = ["openai/", "google/", "anthropic/"];
+
+function supportsJsonMode(model: string): boolean {
+  return JSON_MODE_SUPPORTED_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
 export class PaperAnalysisService {
   private apiKey: string;
   private model: string;
@@ -356,6 +363,21 @@ Output JSON only, matching the schema exactly.`;
     const userPrompt = this.buildUserPrompt(paper, taxonomy);
 
     // Make API call
+    const requestBody: Record<string, unknown> = {
+      model: this.model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.2, // Low temperature for consistency
+      max_tokens: 8000, // DTL-P analysis requires substantial output
+    };
+
+    // Only add response_format for models that support it
+    if (supportsJsonMode(this.model)) {
+      requestBody.response_format = { type: "json_object" };
+    }
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
@@ -364,16 +386,7 @@ Output JSON only, matching the schema exactly.`;
         "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || "https://research.dimitrov.im",
         "X-Title": "Research Aggregator DTL-P",
       },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.2, // Low temperature for consistency
-        max_tokens: 8000, // DTL-P analysis requires substantial output
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -388,10 +401,22 @@ Output JSON only, matching the schema exactly.`;
       throw new Error("No content in OpenRouter response");
     }
 
+    // Strip markdown code blocks if present (for models without JSON mode)
+    let jsonContent = content.trim();
+    if (jsonContent.startsWith("```json")) {
+      jsonContent = jsonContent.slice(7);
+    } else if (jsonContent.startsWith("```")) {
+      jsonContent = jsonContent.slice(3);
+    }
+    if (jsonContent.endsWith("```")) {
+      jsonContent = jsonContent.slice(0, -3);
+    }
+    jsonContent = jsonContent.trim();
+
     // Parse JSON
     let parsed;
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(jsonContent);
     } catch {
       throw new Error(`Failed to parse OpenRouter response as JSON: ${content.substring(0, 500)}`);
     }

@@ -34,6 +34,13 @@ interface OpenRouterResponse {
   };
 }
 
+// Models that support response_format: { type: "json_object" }
+const JSON_MODE_SUPPORTED_PREFIXES = ["openai/", "google/", "anthropic/"];
+
+function supportsJsonMode(model: string): boolean {
+  return JSON_MODE_SUPPORTED_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
 export class OpenRouterService {
   private apiKey: string;
   private model: string;
@@ -83,6 +90,21 @@ Abstract: ${abstract}
 
 Provide exactly 3 bullet points highlighting the main contributions and an ELI5 explanation.`;
 
+    const requestBody: Record<string, unknown> = {
+      model: this.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3, // Lower temperature for more consistent output
+      max_tokens: 2000,
+    };
+
+    // Only add response_format for models that support it
+    if (supportsJsonMode(this.model)) {
+      requestBody.response_format = { type: "json_object" };
+    }
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
@@ -91,16 +113,7 @@ Provide exactly 3 bullet points highlighting the main contributions and an ELI5 
         "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || "https://research.dimitrov.im",
         "X-Title": "Research Aggregator",
       },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3, // Lower temperature for more consistent output
-        max_tokens: 2000,
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -115,10 +128,22 @@ Provide exactly 3 bullet points highlighting the main contributions and an ELI5 
       throw new Error("No content in OpenRouter response");
     }
 
+    // Strip markdown code blocks if present (for models without JSON mode)
+    let jsonContent = content.trim();
+    if (jsonContent.startsWith("```json")) {
+      jsonContent = jsonContent.slice(7);
+    } else if (jsonContent.startsWith("```")) {
+      jsonContent = jsonContent.slice(3);
+    }
+    if (jsonContent.endsWith("```")) {
+      jsonContent = jsonContent.slice(0, -3);
+    }
+    jsonContent = jsonContent.trim();
+
     // Parse the JSON response
     let parsed;
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(jsonContent);
     } catch (e) {
       throw new Error(`Failed to parse OpenRouter response as JSON: ${content}`);
     }
