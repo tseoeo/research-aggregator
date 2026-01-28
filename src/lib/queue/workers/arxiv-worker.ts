@@ -19,6 +19,9 @@ import { papers, paperSources } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import { socialMonitorQueue, summaryQueue, analysisQueue } from "../queues";
 
+// AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
+const AI_ENABLED = process.env.AI_ENABLED === "true";
+
 interface ArxivFetchJob {
   category?: string;
   categories?: readonly string[];
@@ -133,6 +136,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
 
   console.log(`[ArxivWorker] Starting fetch for categories: ${categoriesToFetch.join(", ")}`);
   console.log(`[ArxivWorker] Max pages per category: ${maxPagesPerCategory}`);
+  console.log(`[ArxivWorker] AI processing: ${AI_ENABLED ? "ENABLED" : "DISABLED (set AI_ENABLED=true to enable)"}`);
+
 
   // Track unique papers across categories (same paper can be in cs.AI and cs.LG)
   const seenArxivIds = new Set<string>();
@@ -218,31 +223,36 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
     );
     socialMonitorQueued++;
 
-    // Queue for summary generation (staggered - 2s between jobs)
-    await summaryQueue.add(
-      "generate-summary",
-      {
-        paperId,
-        arxivId: paper.arxivId,
-        title: paper.title,
-        abstract: paper.abstract,
-      },
-      { delay: 2000 * newCount }
-    );
-    summaryJobsQueued++;
+    // Queue for AI processing only if enabled
+    if (AI_ENABLED) {
+      // Queue for summary generation (staggered - 2s between jobs)
+      await summaryQueue.add(
+        "generate-summary",
+        {
+          paperId,
+          arxivId: paper.arxivId,
+          title: paper.title,
+          abstract: paper.abstract,
+        },
+        { delay: 2000 * newCount }
+      );
+      summaryJobsQueued++;
+      console.log(`[ArxivWorker] [AI] Queued summary job for paper ${paperId}`);
 
-    // Queue for DTL-P analysis (staggered - 12s between jobs, analysis is expensive)
-    await analysisQueue.add(
-      "analyze-paper",
-      {
-        paperId,
-        title: paper.title,
-        abstract: paper.abstract,
-        year: paper.publishedAt?.getFullYear(),
-      },
-      { delay: 12000 * newCount }
-    );
-    analysisJobsQueued++;
+      // Queue for DTL-P analysis (staggered - 12s between jobs, analysis is expensive)
+      await analysisQueue.add(
+        "analyze-paper",
+        {
+          paperId,
+          title: paper.title,
+          abstract: paper.abstract,
+          year: paper.publishedAt?.getFullYear(),
+        },
+        { delay: 12000 * newCount }
+      );
+      analysisJobsQueued++;
+      console.log(`[ArxivWorker] [AI] Queued analysis job for paper ${paperId}`);
+    }
   }
 
   const resultSummary: FetchResult = {

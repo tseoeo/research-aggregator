@@ -538,6 +538,11 @@ Output JSON only, matching the schema exactly.`;
       requestBody.response_format = { type: "json_object" };
     }
 
+    console.log(`[PaperAnalysis] [AI-CALL] Requesting DTL-P analysis`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Model: ${this.model}`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Title: ${paper.title.substring(0, 60)}...`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Max tokens: 8000 (analysis is expensive)`);
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
@@ -551,11 +556,15 @@ Output JSON only, matching the schema exactly.`;
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`[PaperAnalysis] [AI-CALL] API error: ${response.status}`);
       throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
+
+    console.log(`[PaperAnalysis] [AI-CALL] Response received`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Tokens: ${data.usage?.total_tokens || "unknown"} (prompt: ${data.usage?.prompt_tokens || "?"}, completion: ${data.usage?.completion_tokens || "?"})`);
 
     if (!content) {
       throw new Error("No content in OpenRouter response");

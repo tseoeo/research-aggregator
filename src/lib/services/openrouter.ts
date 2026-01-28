@@ -105,6 +105,10 @@ Provide exactly 3 bullet points highlighting the main contributions and an ELI5 
       requestBody.response_format = { type: "json_object" };
     }
 
+    console.log(`[OpenRouter] [AI-CALL] Requesting summary generation`);
+    console.log(`[OpenRouter] [AI-CALL]   Model: ${this.model}`);
+    console.log(`[OpenRouter] [AI-CALL]   Title: ${title.substring(0, 60)}...`);
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
@@ -123,6 +127,9 @@ Provide exactly 3 bullet points highlighting the main contributions and an ELI5 
 
     const data: OpenRouterResponse = await response.json();
     const content = data.choices[0]?.message?.content;
+
+    console.log(`[OpenRouter] [AI-CALL] Response received`);
+    console.log(`[OpenRouter] [AI-CALL]   Tokens: ${data.usage?.total_tokens || "unknown"} (prompt: ${data.usage?.prompt_tokens || "?"}, completion: ${data.usage?.completion_tokens || "?"})`);
 
     if (!content) {
       throw new Error("No content in OpenRouter response");

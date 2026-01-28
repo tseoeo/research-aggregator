@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { OpenRouterService } from "@/lib/services/openrouter";
 import { arxivService } from "@/lib/services/arxiv";
 
+// AI processing toggle - set AI_ENABLED=true to enable AI summaries
+const AI_ENABLED = process.env.AI_ENABLED === "true";
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -13,6 +16,13 @@ interface RouteParams {
  * In production, this would check the database first and use the queue.
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  if (!AI_ENABLED) {
+    return NextResponse.json(
+      { error: "AI processing is currently paused (AI_ENABLED=false)" },
+      { status: 503 }
+    );
+  }
+
   try {
     const { id } = await params;
 
@@ -61,6 +71,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
  * Get the summary for a paper (generates if not exists).
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  if (!AI_ENABLED) {
+    return NextResponse.json({
+      paperId: null,
+      bullets: null,
+      eli5: null,
+      configured: false,
+      message: "AI processing is currently paused (AI_ENABLED=false)",
+    });
+  }
+
   try {
     const { id } = await params;
 

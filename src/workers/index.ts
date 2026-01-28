@@ -24,6 +24,9 @@ import { desc, gte, isNull, eq } from "drizzle-orm";
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
 
+// AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
+const AI_ENABLED = process.env.AI_ENABLED === "true";
+
 /**
  * Schedule recurring arXiv fetch jobs
  */
@@ -232,19 +235,31 @@ async function startWorkers() {
 
   // Create and start workers
   workers.push(createArxivWorker());
-  workers.push(createSummaryWorker());
   workers.push(createSocialMonitorWorker());
   workers.push(createNewsWorker());
-  workers.push(createAnalysisWorker());
   workers.push(createBackfillWorker());
 
-  console.log(`\n[Main] Started ${workers.length} workers`);
+  // Only start AI workers if AI is enabled
+  if (AI_ENABLED) {
+    workers.push(createSummaryWorker());
+    workers.push(createAnalysisWorker());
+    console.log("[Main] [AI] Started AI workers (summary + analysis)");
+  } else {
+    console.log("[Main] [AI] AI workers NOT started (AI_ENABLED=false)");
+  }
+
+  console.log(`\n[Main] Started ${workers.length} workers (AI: ${AI_ENABLED ? "ON" : "OFF"})`);
 
   // Schedule recurring jobs
   await scheduleJobs();
 
-  // Backfill missing summaries and analyses on startup
-  await backfillMissingAI();
+  // Backfill missing summaries and analyses on startup (only if AI enabled)
+  if (AI_ENABLED) {
+    console.log("[Main] [AI] AI processing is ENABLED - running backfill");
+    await backfillMissingAI();
+  } else {
+    console.log("[Main] [AI] AI processing is DISABLED - skipping backfill (set AI_ENABLED=true to enable)");
+  }
 
   console.log("[Main] All workers running\n");
 }
