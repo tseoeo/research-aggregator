@@ -28,7 +28,8 @@ interface BackfillRequest {
  * Generate deterministic job ID for date-based fetch (Phase F)
  */
 function getDateFetchJobId(date: string): string {
-  return `arxiv-fetch-date:${date}`;
+  // BullMQ doesn't allow colons in job IDs
+  return `arxiv-fetch-date-${date}`;
 }
 
 /**

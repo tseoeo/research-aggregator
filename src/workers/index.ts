@@ -51,7 +51,8 @@ function getDaysAgoISO(days: number): string {
  * Format: arxiv-fetch-date:YYYY-MM-DD
  */
 function getDateFetchJobId(date: string): string {
-  return `arxiv-fetch-date:${date}`;
+  // BullMQ doesn't allow colons in job IDs
+  return `arxiv-fetch-date-${date}`;
 }
 
 /**
