@@ -12,11 +12,11 @@
  */
 
 import { Worker, Job } from "bullmq";
-import { redisConnection } from "../../redis";
+import { redisConnection, getRedisClient } from "../../redis";
 import { arxivService, AI_CATEGORIES, type ArxivPaper } from "../../services/arxiv";
 import { db } from "../../db";
-import { papers, paperSources } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { papers, paperSources, ingestionRuns } from "../../db/schema";
+import { eq, and } from "drizzle-orm";
 import { socialMonitorQueue, summaryQueue, analysisQueue } from "../queues";
 
 // AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
@@ -28,6 +28,11 @@ interface ArxivFetchJob {
   maxResults?: number;
   useAllAICategories?: boolean;
   maxPagesPerCategory?: number; // Limit pagination depth
+}
+
+interface ArxivFetchByDateJob {
+  date: string; // ISO date string "2026-02-04"
+  categories?: string[]; // Categories to fetch (defaults to AI_CATEGORIES)
 }
 
 interface FetchStats {
@@ -46,6 +51,12 @@ interface FetchResult {
   socialMonitorQueued: number;
   summaryJobsQueued: number;
   analysisJobsQueued: number;
+}
+
+interface DateFetchResult extends FetchResult {
+  date: string;
+  expectedTotal: number;
+  complete: boolean;
 }
 
 /**
@@ -268,11 +279,256 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
   return resultSummary;
 }
 
+/**
+ * Process arXiv fetch by date job (Phase 1)
+ * Fetches ALL papers for a specific date across all AI categories.
+ * Uses date-based filtering to ensure 100% capture.
+ */
+async function processArxivFetchByDate(job: Job<ArxivFetchByDateJob>): Promise<DateFetchResult> {
+  const { date: dateStr, categories = [...AI_CATEGORIES] } = job.data;
+  const date = new Date(dateStr);
+
+  console.log(`[ArxivWorker] Starting date-based fetch for ${dateStr}`);
+  console.log(`[ArxivWorker] Categories: ${categories.join(", ")}`);
+  console.log(`[ArxivWorker] AI processing: ${AI_ENABLED ? "ENABLED" : "DISABLED"}`);
+
+  // Phase E: Acquire Redis lock for multi-replica safety
+  const lockKey = `arxiv:fetch-lock:${dateStr}`;
+  const { acquireLock, releaseLock } = await import("../../redis");
+  const lockAcquired = await acquireLock(lockKey, 600); // 10 minute TTL
+
+  if (!lockAcquired) {
+    console.log(`[ArxivWorker] Lock not acquired for ${dateStr}, another worker is processing. Skipping.`);
+    return {
+      date: dateStr,
+      expectedTotal: 0,
+      complete: true,
+      totalFetched: 0,
+      uniquePapers: 0,
+      newPapers: 0,
+      duplicatesSkipped: 0,
+      existingSkipped: 0,
+      byCategory: [],
+      socialMonitorQueued: 0,
+      summaryJobsQueued: 0,
+      analysisJobsQueued: 0,
+    };
+  }
+
+  try {
+    // Track unique papers across categories
+    const seenArxivIds = new Set<string>();
+    const uniquePapers: ArxivPaper[] = [];
+    const categoryStats: FetchStats[] = [];
+    let totalFetched = 0;
+    let duplicatesSkipped = 0;
+    let expectedTotal = 0;
+    let allComplete = true;
+
+    // Fetch each category for this date
+    for (const category of categories) {
+      // Phase A: Create/update ingestion run record
+      const runDate = new Date(dateStr);
+      runDate.setUTCHours(0, 0, 0, 0);
+
+      try {
+        // Try to insert a new ingestion run (will fail if exists due to unique constraint)
+        await db
+          .insert(ingestionRuns)
+          .values({
+            date: runDate,
+            category,
+            status: "started",
+            expectedTotal: null,
+            fetchedTotal: 0,
+            lastStartIndex: 0,
+          })
+          .onConflictDoNothing();
+      } catch {
+        // Ignore - row may already exist
+      }
+
+      // Update status to started
+      await db
+        .update(ingestionRuns)
+        .set({ status: "started", startedAt: new Date() })
+        .where(and(eq(ingestionRuns.date, runDate), eq(ingestionRuns.category, category)));
+
+      try {
+        const result = await arxivService.fetchAllPapersForDate(date, category);
+
+        categoryStats.push({
+          category,
+          fetched: result.papers.length,
+          pages: Math.ceil(result.papers.length / 100),
+        });
+
+        totalFetched += result.papers.length;
+        expectedTotal += result.total;
+
+        if (!result.complete) {
+          allComplete = false;
+        }
+
+        // Deduplicate across categories
+        for (const paper of result.papers) {
+          if (!seenArxivIds.has(paper.arxivId)) {
+            seenArxivIds.add(paper.arxivId);
+            uniquePapers.push(paper);
+          } else {
+            duplicatesSkipped++;
+          }
+        }
+
+        // Phase A: Update ingestion run with results
+        await db
+          .update(ingestionRuns)
+          .set({
+            expectedTotal: result.total,
+            fetchedTotal: result.papers.length,
+            status: result.complete ? "completed" : "partial",
+            completedAt: new Date(),
+            lastStartIndex: result.papers.length,
+          })
+          .where(and(eq(ingestionRuns.date, runDate), eq(ingestionRuns.category, category)));
+
+      } catch (error) {
+        console.error(`[ArxivWorker] Error fetching ${category} for ${dateStr}:`, error);
+        allComplete = false;
+
+        // Phase A: Mark as failed
+        await db
+          .update(ingestionRuns)
+          .set({
+            status: "failed",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            completedAt: new Date(),
+          })
+          .where(and(eq(ingestionRuns.date, runDate), eq(ingestionRuns.category, category)));
+      }
+    }
+
+    console.log(
+      `[ArxivWorker] Date ${dateStr}: Total fetched: ${totalFetched}, ` +
+      `Expected: ${expectedTotal}, Unique: ${uniquePapers.length}, ` +
+      `Duplicates: ${duplicatesSkipped}, Complete: ${allComplete}`
+    );
+
+    // Insert papers into database
+    const sourceId = await ensureArxivSource();
+    let newCount = 0;
+    let existingSkipped = 0;
+    let socialMonitorQueued = 0;
+    let summaryJobsQueued = 0;
+    let analysisJobsQueued = 0;
+
+    for (const paper of uniquePapers) {
+      const result = await db
+        .insert(papers)
+        .values({
+          sourceId,
+          externalId: paper.arxivId,
+          title: paper.title,
+          abstract: paper.abstract,
+          publishedAt: paper.publishedAt,
+          updatedAt: paper.updatedAt,
+          pdfUrl: paper.pdfUrl,
+          categories: paper.categories,
+          primaryCategory: paper.primaryCategory,
+        })
+        .onConflictDoNothing({
+          target: [papers.sourceId, papers.externalId],
+        })
+        .returning({ id: papers.id });
+
+      if (result.length === 0) {
+        existingSkipped++;
+        continue;
+      }
+
+      const paperId = result[0].id;
+      newCount++;
+
+      // Queue for social monitoring
+      await socialMonitorQueue.add(
+        "monitor-paper",
+        {
+          paperId,
+          arxivId: paper.arxivId,
+          title: paper.title,
+        },
+        { delay: 1000 * newCount }
+      );
+      socialMonitorQueued++;
+
+      // Queue for AI processing only if enabled
+      if (AI_ENABLED) {
+        await summaryQueue.add(
+          "generate-summary",
+          {
+            paperId,
+            arxivId: paper.arxivId,
+            title: paper.title,
+            abstract: paper.abstract,
+          },
+          { delay: 2000 * newCount }
+        );
+        summaryJobsQueued++;
+
+        await analysisQueue.add(
+          "analyze-paper",
+          {
+            paperId,
+            title: paper.title,
+            abstract: paper.abstract,
+            year: paper.publishedAt?.getFullYear(),
+          },
+          { delay: 12000 * newCount }
+        );
+        analysisJobsQueued++;
+      }
+    }
+
+    const resultSummary: DateFetchResult = {
+      date: dateStr,
+      expectedTotal,
+      complete: allComplete,
+      totalFetched,
+      uniquePapers: uniquePapers.length,
+      newPapers: newCount,
+      duplicatesSkipped,
+      existingSkipped,
+      byCategory: categoryStats,
+      socialMonitorQueued,
+      summaryJobsQueued,
+      analysisJobsQueued,
+    };
+
+    console.log(`[ArxivWorker] Date fetch complete:`, JSON.stringify(resultSummary, null, 2));
+
+    return resultSummary;
+  } finally {
+    // Always release the lock
+    await releaseLock(lockKey);
+  }
+}
+
 export function createArxivWorker() {
-  const worker = new Worker("arxiv-fetch", processArxivFetch, {
-    connection: redisConnection,
-    concurrency: 1, // One at a time to respect rate limits
-  });
+  // Main worker handles both job types
+  const worker = new Worker(
+    "arxiv-fetch",
+    async (job: Job) => {
+      // Route to appropriate handler based on job name
+      if (job.name.startsWith("fetch-by-date")) {
+        return processArxivFetchByDate(job as Job<ArxivFetchByDateJob>);
+      }
+      return processArxivFetch(job as Job<ArxivFetchJob>);
+    },
+    {
+      connection: redisConnection,
+      concurrency: 1, // One at a time to respect rate limits
+    }
+  );
 
   worker.on("completed", (job, result) => {
     console.log(

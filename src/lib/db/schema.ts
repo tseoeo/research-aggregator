@@ -352,6 +352,27 @@ export const apiUsage = pgTable("api_usage", {
 });
 
 // ============================================
+// INGESTION LEDGER (Phase A)
+// ============================================
+
+export const ingestionRuns = pgTable(
+  "ingestion_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: timestamp("date").notNull(), // UTC date of papers being fetched
+    category: varchar("category", { length: 50 }).notNull(), // arXiv category (cs.AI, cs.LG, etc.)
+    expectedTotal: integer("expected_total"), // from opensearch:totalResults
+    fetchedTotal: integer("fetched_total").default(0),
+    status: varchar("status", { length: 50 }).notNull().default("started"), // started | completed | partial | failed
+    lastStartIndex: integer("last_start_index").default(0), // for resume capability
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+    errorMessage: text("error_message"),
+  },
+  (table) => [unique("ingestion_runs_date_category").on(table.date, table.category)]
+);
+
+// ============================================
 // DTL-P: TAXONOMY REGISTRY
 // ============================================
 
@@ -500,3 +521,7 @@ export type PaperCardAnalysis = typeof paperCardAnalyses.$inferSelect;
 export type NewPaperCardAnalysis = typeof paperCardAnalyses.$inferInsert;
 export type PaperUseCaseMapping = typeof paperUseCaseMappings.$inferSelect;
 export type NewPaperUseCaseMapping = typeof paperUseCaseMappings.$inferInsert;
+
+// Ingestion Ledger Types
+export type IngestionRun = typeof ingestionRuns.$inferSelect;
+export type NewIngestionRun = typeof ingestionRuns.$inferInsert;

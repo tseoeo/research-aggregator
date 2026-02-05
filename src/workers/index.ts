@@ -19,7 +19,8 @@ import {
 import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue } from "../lib/queue/queues";
 import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
-import { desc, gte, isNull, eq } from "drizzle-orm";
+import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
+import { AI_CATEGORIES } from "../lib/services/arxiv";
 
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
@@ -28,10 +29,40 @@ const workers: Worker[] = [];
 const AI_ENABLED = process.env.AI_ENABLED === "true";
 
 /**
+ * Get yesterday's date as ISO string (YYYY-MM-DD)
+ */
+function getYesterdayISO(): string {
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return yesterday.toISOString().split("T")[0];
+}
+
+/**
+ * Get date N days ago as ISO string (YYYY-MM-DD)
+ */
+function getDaysAgoISO(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().split("T")[0];
+}
+
+/**
+ * Generate deterministic job ID for date-based fetch (Phase F)
+ * Format: arxiv-fetch-date:YYYY-MM-DD
+ */
+function getDateFetchJobId(date: string): string {
+  return `arxiv-fetch-date:${date}`;
+}
+
+/**
  * Schedule recurring arXiv fetch jobs
  *
  * Note: arXiv publishes new papers around 21:00 UTC on weekdays.
  * We schedule the fetch for 22:00 UTC to allow time for processing.
+ *
+ * Phase 1: Uses date-based fetching for guaranteed 100% capture
+ * Phase B: Adds overlap window (fetches yesterday AND day-before-yesterday)
+ * Phase F: Uses deterministic job IDs to prevent duplicates
  */
 async function scheduleJobs() {
   // Schedule arXiv fetch daily at 22:00 UTC (1 hour after arXiv publishes)
@@ -42,39 +73,60 @@ async function scheduleJobs() {
     await arxivFetchQueue.removeRepeatableByKey(job.key);
   }
 
-  // Add new repeatable job - fetch from ALL AI categories
-  // Schedule: Once daily at 22:00 UTC (1 hour after arXiv publishes new papers)
+  // Phase 1: Schedule date-based fetch for yesterday at 22:00 UTC
   await arxivFetchQueue.add(
-    "fetch-all-ai",
+    "fetch-by-date-daily",
     {
-      useAllAICategories: true,
-      maxResults: 200, // Increased to catch all new papers (AI categories can have 150-300/day)
+      // Will be replaced with actual date when job runs - use placeholder
+      // The job handler reads the date dynamically
     },
     {
       repeat: {
-        pattern: "0 22 * * *", // Daily at 22:00 UTC (after arXiv publishes at ~21:00 UTC)
+        pattern: "0 22 * * *", // Daily at 22:00 UTC
       },
+      jobId: "arxiv-fetch-date-daily", // Idempotent ID for the repeatable job
     }
   );
 
-  console.log("[Scheduler] Scheduled arXiv fetch job for all AI categories (daily at 22:00 UTC)");
+  console.log("[Scheduler] Scheduled date-based arXiv fetch (daily at 22:00 UTC)");
 
-  // Also run immediately on startup
+  // On startup, queue date-based fetch for yesterday and day-before-yesterday (Phase B: Overlap Window)
+  const yesterday = getYesterdayISO();
+  const dayBeforeYesterday = getDaysAgoISO(2);
+
+  // Phase F: Use deterministic job IDs to prevent duplicates
+  const yesterdayJobId = getDateFetchJobId(yesterday);
+  const dayBeforeJobId = getDateFetchJobId(dayBeforeYesterday);
+
+  // Queue yesterday's fetch
   await arxivFetchQueue.add(
-    "fetch-all-ai-startup",
+    "fetch-by-date",
     {
-      useAllAICategories: true,
-      maxResults: 200, // Same as scheduled fetch to ensure we don't miss papers
+      date: yesterday,
+      categories: [...AI_CATEGORIES],
     },
     {
       delay: 5000, // Wait 5 seconds for workers to be ready
+      jobId: yesterdayJobId,
     }
   );
+  console.log(`[Scheduler] Queued date-based fetch for yesterday (${yesterday})`);
 
-  console.log("[Scheduler] Queued initial arXiv fetch for all AI categories (200 papers)");
+  // Queue day-before-yesterday's fetch (Phase B: Overlap Window for late arrivals)
+  await arxivFetchQueue.add(
+    "fetch-by-date",
+    {
+      date: dayBeforeYesterday,
+      categories: [...AI_CATEGORIES],
+    },
+    {
+      delay: 10000, // Stagger after yesterday's job
+      jobId: dayBeforeJobId,
+    }
+  );
+  console.log(`[Scheduler] Queued date-based fetch for day-before-yesterday (${dayBeforeYesterday}) [Overlap Window]`);
 
   // Schedule daily refresh for social mentions and news
-  // This will re-fetch for papers from the last 7 days
   scheduleDailyRefresh();
 }
 
@@ -229,6 +281,114 @@ async function backfillMissingAI() {
 }
 
 /**
+ * Detect gaps in paper ingestion (Phase 2)
+ * Uses publishedAt for gap detection (Phase C fix - not createdAt)
+ *
+ * @param days - Number of days to check for gaps
+ * @param minPapersPerDay - Minimum expected papers per day (days below this are gaps)
+ * @returns Array of ISO date strings with missing/low data
+ */
+async function detectGaps(days: number = 30, minPapersPerDay: number = 50): Promise<string[]> {
+  console.log(`[GapDetection] Checking for gaps in the last ${days} days (min ${minPapersPerDay} papers/day)...`);
+
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days);
+    cutoffDate.setUTCHours(0, 0, 0, 0);
+
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    yesterday.setUTCHours(23, 59, 59, 999);
+
+    // Get paper counts by publishedAt date (Phase C: use publishedAt, not createdAt)
+    const paperCounts = await db
+      .select({
+        date: sql<string>`DATE(published_at)::text`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(papers)
+      .where(
+        and(
+          gte(papers.publishedAt, cutoffDate),
+          lte(papers.publishedAt, yesterday)
+        )
+      )
+      .groupBy(sql`DATE(published_at)`)
+      .orderBy(sql`DATE(published_at)`);
+
+    // Build a map of dates with counts
+    const countsByDate = new Map<string, number>();
+    for (const row of paperCounts) {
+      if (row.date) {
+        countsByDate.set(row.date, row.count);
+      }
+    }
+
+    // Generate all dates in the range and find gaps
+    const missingDates: string[] = [];
+    const current = new Date(cutoffDate);
+
+    while (current <= yesterday) {
+      const dateStr = current.toISOString().split("T")[0];
+      const count = countsByDate.get(dateStr) || 0;
+
+      // Skip weekends (arXiv doesn't publish on weekends)
+      const dayOfWeek = current.getUTCDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      if (!isWeekend && count < minPapersPerDay) {
+        console.log(`[GapDetection] Gap found: ${dateStr} has only ${count} papers (expected >= ${minPapersPerDay})`);
+        missingDates.push(dateStr);
+      }
+
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+
+    console.log(`[GapDetection] Found ${missingDates.length} days with gaps`);
+    return missingDates;
+  } catch (error) {
+    console.error("[GapDetection] Error:", error);
+    return [];
+  }
+}
+
+/**
+ * Backfill missing dates detected by gap detection (Phase 2)
+ * Queues date-based fetch jobs with staggered delays
+ */
+async function backfillMissingDates() {
+  const missingDates = await detectGaps(30, 50);
+
+  if (missingDates.length === 0) {
+    console.log("[GapBackfill] No gaps detected in the last 30 days");
+    return;
+  }
+
+  console.log(`[GapBackfill] Queuing backfill for ${missingDates.length} dates...`);
+
+  for (let i = 0; i < missingDates.length; i++) {
+    const date = missingDates[i];
+    const jobId = getDateFetchJobId(date);
+
+    await arxivFetchQueue.add(
+      "fetch-by-date",
+      {
+        date,
+        categories: [...AI_CATEGORIES],
+      },
+      {
+        delay: (i + 1) * 60000, // 1 minute between dates to avoid rate limiting
+        jobId, // Phase F: Idempotent job ID
+      }
+    );
+
+    console.log(`[GapBackfill] Queued fetch for ${date} (delay: ${i + 1} minutes)`);
+  }
+
+  console.log(`[GapBackfill] Queued ${missingDates.length} backfill jobs`);
+}
+
+/**
  * Start all workers
  */
 async function startWorkers() {
@@ -255,6 +415,10 @@ async function startWorkers() {
 
   // Schedule recurring jobs
   await scheduleJobs();
+
+  // Phase 2: Detect and backfill gaps on startup
+  console.log("[Main] Running gap detection and backfill...");
+  await backfillMissingDates();
 
   // Backfill missing summaries and analyses on startup (only if AI enabled)
   if (AI_ENABLED) {

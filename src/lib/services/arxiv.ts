@@ -453,6 +453,74 @@ export class ArxivService {
       hasMore,
     };
   }
+
+  /**
+   * Fetch ALL papers for a specific date from a single category.
+   * Paginates until all papers are retrieved.
+   *
+   * @param date - The date to fetch papers for
+   * @param category - The arXiv category (e.g., "cs.AI")
+   * @returns Object with papers array, total count, and whether fetch completed
+   */
+  async fetchAllPapersForDate(
+    date: Date,
+    category: string
+  ): Promise<{ papers: ArxivPaper[]; total: number; complete: boolean }> {
+    const allPapers: ArxivPaper[] = [];
+    let start = 0;
+    const perPage = 100;
+    let total = 0;
+    let fetchAttempts = 0;
+    const maxAttempts = 20; // Safety limit: 20 pages max (2000 papers)
+
+    console.log(`[ArxivService] fetchAllPapersForDate: ${date.toISOString().split("T")[0]} / ${category}`);
+
+    while (fetchAttempts < maxAttempts) {
+      try {
+        const result = await this.fetchByDateRange(date, date, category, {
+          maxResults: perPage,
+          start,
+        });
+
+        allPapers.push(...result.papers);
+        total = result.total;
+        fetchAttempts++;
+
+        console.log(
+          `[ArxivService] ${category} page ${fetchAttempts}: fetched ${result.papers.length}, ` +
+          `total so far: ${allPapers.length}/${total}`
+        );
+
+        // Stop conditions:
+        // 1. We've fetched all papers (total reached)
+        // 2. No more papers returned
+        // 3. Fewer papers than requested (end of results)
+        if (
+          allPapers.length >= total ||
+          result.papers.length === 0 ||
+          result.papers.length < perPage
+        ) {
+          break;
+        }
+
+        start += perPage;
+      } catch (error) {
+        console.error(
+          `[ArxivService] Error fetching ${category} page ${fetchAttempts + 1}:`,
+          error
+        );
+        // Return what we have so far
+        return { papers: allPapers, total, complete: false };
+      }
+    }
+
+    const complete = allPapers.length >= total;
+    console.log(
+      `[ArxivService] fetchAllPapersForDate complete: ${allPapers.length}/${total} papers (complete: ${complete})`
+    );
+
+    return { papers: allPapers, total, complete };
+  }
 }
 
 // Export singleton instance
