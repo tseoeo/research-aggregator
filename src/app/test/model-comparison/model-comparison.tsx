@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +80,9 @@ interface SimplePaper {
 }
 
 export function ModelComparisonClient() {
+  const searchParams = useSearchParams();
+  const adminToken = searchParams.get("admin_token") || "";
+
   const [papers, setPapers] = useState<SimplePaper[]>([]);
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -169,7 +173,10 @@ export function ModelComparisonClient() {
       try {
         const response = await fetch("/api/test/model-comparison", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${adminToken}`,
+          },
           body: JSON.stringify({ paperId: selectedPaperId, model }),
         });
 

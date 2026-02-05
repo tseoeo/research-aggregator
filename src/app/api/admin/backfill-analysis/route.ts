@@ -9,6 +9,8 @@ import { db } from "@/lib/db";
 import { papers, paperCardAnalyses } from "@/lib/db/schema";
 import { analysisQueue } from "@/lib/queue/queues";
 import { eq, isNull, sql } from "drizzle-orm";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,21 +18,34 @@ export const dynamic = "force-dynamic";
  * POST /api/admin/backfill-analysis
  *
  * Queue all papers without analysis for DTL-P processing.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ *
  * Query params:
- * - secret: admin secret (required)
  * - limit: max papers to queue (default: all)
  * - delay: milliseconds between jobs (default: 15000)
  */
 export async function POST(request: NextRequest) {
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
+  // Check if AI is enabled
+  if (!isAiEnabled()) {
+    return NextResponse.json(
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
-    const secret = searchParams.get("secret");
-    const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
-
-    if (secret !== adminSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!, 10) : undefined;
     const delayMs = parseInt(searchParams.get("delay") || "15000", 10);
 
@@ -111,14 +126,14 @@ export async function POST(request: NextRequest) {
  * GET /api/admin/backfill-analysis
  *
  * Show backfill status and info.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret");
-  const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
-
-  if (secret !== adminSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   try {
@@ -142,6 +157,7 @@ export async function GET(request: NextRequest) {
     const failed = await analysisQueue.getFailedCount();
 
     return NextResponse.json({
+      aiStatus: getAiStatusMessage(),
       papers: {
         total: totalPapers,
         analyzed: analyzedPapers,
@@ -160,8 +176,8 @@ export async function GET(request: NextRequest) {
       endpoint: {
         method: "POST",
         path: "/api/admin/backfill-analysis",
+        authentication: "Authorization: Bearer <ADMIN_SECRET>",
         params: {
-          secret: "ADMIN_SECRET (required)",
           limit: "Max papers to queue (optional)",
           delay: "Milliseconds between jobs (default: 15000)",
         },

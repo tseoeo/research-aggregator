@@ -2,11 +2,13 @@
  * Queue Status API
  *
  * Provides status of all job queues for monitoring.
- * Should be protected in production.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { queues } from "@/lib/queue/queues";
+import { verifyAdminAuth } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,12 @@ interface QueueStatus {
 }
 
 export async function GET(request: NextRequest) {
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const includeFailedDetails = searchParams.get("failed") === "true";

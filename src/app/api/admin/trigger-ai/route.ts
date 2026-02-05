@@ -4,9 +4,9 @@
  * Convenience endpoint to trigger both summary and analysis generation.
  * Part of the decoupled architecture - AI processing is separate from paper ingestion.
  *
- * Usage:
- *   POST /api/admin/trigger-ai?secret=xxx
- *   Body: { "summaryLimit": 100, "analysisLimit": 50, "summaryModel": "...", "analysisModel": "..." }
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ *
+ * Body: { "summaryLimit": 100, "analysisLimit": 50, "summaryModel": "...", "analysisModel": "..." }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,16 +14,28 @@ import { db } from "@/lib/db";
 import { papers, paperCardAnalyses } from "@/lib/db/schema";
 import { eq, isNull, desc } from "drizzle-orm";
 import { summaryQueue, analysisQueue } from "@/lib/queue/queues";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
-
 export async function POST(request: NextRequest) {
-  // Verify admin secret
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
+  // Check if AI is enabled
+  if (!isAiEnabled()) {
+    return NextResponse.json(
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
+      { status: 503 }
+    );
   }
 
   try {
@@ -131,11 +143,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET to check how many papers need AI processing
+/**
+ * GET /api/admin/trigger-ai
+ *
+ * Check how many papers need AI processing.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ */
 export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   try {

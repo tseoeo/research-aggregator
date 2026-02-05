@@ -4,28 +4,27 @@
  * Queues historical paper fetching for a date range.
  * Each date is processed as a separate job to respect rate limits.
  *
- * Usage:
- *   POST /api/admin/backfill-papers?secret=xxx
- *   Body: {
- *     "startDate": "2024-01-01",
- *     "endDate": "2024-01-31",      // Optional, defaults to yesterday
- *     "categories": ["cs.AI"],       // Optional, defaults to all AI categories
- *     "delayBetweenDays": 60000      // Optional, ms between date jobs (default 60s)
- *   }
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ *
+ * Body: {
+ *   "startDate": "2024-01-01",
+ *   "endDate": "2024-01-31",      // Optional, defaults to yesterday
+ *   "categories": ["cs.AI"],       // Optional, defaults to all AI categories
+ *   "delayBetweenDays": 60000      // Optional, ms between date jobs (default 60s)
+ * }
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { backfillQueue } from "@/lib/queue/queues";
+import { verifyAdminAuth } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
-
 export async function POST(request: NextRequest) {
-  // Verify admin secret
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   try {
@@ -122,11 +121,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET to check backfill queue status
+/**
+ * GET /api/admin/backfill-papers
+ *
+ * Check backfill queue status.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ */
 export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   try {

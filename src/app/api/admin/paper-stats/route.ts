@@ -2,16 +2,25 @@
  * Paper Stats API
  *
  * Returns paper counts by day for monitoring ingestion.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { papers } from "@/lib/db/schema";
 import { sql, gte } from "drizzle-orm";
+import { verifyAdminAuth } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const days = Math.min(parseInt(searchParams.get("days") || "10"), 30);

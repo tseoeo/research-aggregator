@@ -4,12 +4,11 @@ import { papers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { OpenRouterService } from "@/lib/services/openrouter";
 import { PaperAnalysisService } from "@/lib/services/paper-analysis";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // 2 minutes max for AI calls
-
-// AI processing toggle - set AI_ENABLED=true to enable AI calls
-const AI_ENABLED = process.env.AI_ENABLED === "true";
 
 interface RequestBody {
   paperId: string;
@@ -23,11 +22,26 @@ interface RequestBody {
  *
  * Run AI summary and/or analysis for a paper with a specific model.
  * Used for comparing model outputs and costs.
+ *
+ * PROTECTED: Requires admin authentication to prevent cost abuse.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 export async function POST(request: NextRequest) {
-  if (!AI_ENABLED) {
+  // Verify admin auth - this endpoint can burn AI budget
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
+  // Check if AI is enabled
+  if (!isAiEnabled()) {
     return NextResponse.json(
-      { error: "AI processing is currently paused (AI_ENABLED=false)" },
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
       { status: 503 }
     );
   }

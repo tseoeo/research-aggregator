@@ -16,7 +16,7 @@ import { redisConnection } from "../../redis";
 import { arxivService, AI_CATEGORIES, type ArxivPaper } from "../../services/arxiv";
 import { db } from "../../db";
 import { papers, paperSources } from "../../db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { socialMonitorQueue, summaryQueue, analysisQueue } from "../queues";
 
 // AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
@@ -178,21 +178,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
   let analysisJobsQueued = 0;
 
   for (const paper of uniquePapers) {
-    // Check if paper already exists in DB
-    const existing = await db
-      .select({ id: papers.id })
-      .from(papers)
-      .where(
-        and(eq(papers.sourceId, sourceId), eq(papers.externalId, paper.arxivId))
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      existingSkipped++;
-      continue;
-    }
-
-    // Insert new paper
+    // Use onConflictDoNothing to handle race conditions - if another worker
+    // inserted the same paper between our dedup check and insert, we skip it
     const result = await db
       .insert(papers)
       .values({
@@ -206,7 +193,16 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
         categories: paper.categories,
         primaryCategory: paper.primaryCategory,
       })
+      .onConflictDoNothing({
+        target: [papers.sourceId, papers.externalId],
+      })
       .returning({ id: papers.id });
+
+    // If no row returned, paper already existed - skip
+    if (result.length === 0) {
+      existingSkipped++;
+      continue;
+    }
 
     const paperId = result[0].id;
     newCount++;

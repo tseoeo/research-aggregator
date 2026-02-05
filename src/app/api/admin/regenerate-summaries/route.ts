@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { papers } from "@/lib/db/schema";
 import { summaryQueue } from "@/lib/queue/queues";
 import { sql } from "drizzle-orm";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -10,18 +12,29 @@ export const dynamic = "force-dynamic";
  * POST /api/admin/regenerate-summaries
  *
  * Clear all existing summaries and queue regeneration jobs.
- * Protected by a simple secret key.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 export async function POST(request: NextRequest) {
-  try {
-    // Simple protection - check for admin secret
-    const { searchParams } = new URL(request.url);
-    const secret = searchParams.get("secret");
-    const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
 
-    if (secret !== adminSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  // Check if AI is enabled
+  if (!isAiEnabled()) {
+    return NextResponse.json(
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
+      { status: 503 }
+    );
+  }
+
+  try {
 
     // Get all papers
     const allPapers = await db

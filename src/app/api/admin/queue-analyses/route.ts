@@ -10,16 +10,33 @@ import { db } from "@/lib/db";
 import { papers, paperCardAnalyses } from "@/lib/db/schema";
 import { eq, isNull, desc } from "drizzle-orm";
 import { analysisQueue } from "@/lib/queue/queues";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
-
+/**
+ * POST /api/admin/queue-analyses
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ */
 export async function POST(request: NextRequest) {
-  // Verify admin secret
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
+  // Check if AI is enabled
+  if (!isAiEnabled()) {
+    return NextResponse.json(
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
+      { status: 503 }
+    );
   }
 
   try {
@@ -93,11 +110,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET to check how many papers need analysis
+/**
+ * GET /api/admin/queue-analyses
+ *
+ * Check how many papers need analysis.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ */
 export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get("secret");
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   try {

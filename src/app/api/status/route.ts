@@ -5,6 +5,8 @@
  * - When papers were last fetched
  * - When the next fetch is expected
  * - Paper counts by category
+ *
+ * Note: arXiv fetch is scheduled daily at 22:00 UTC (1 hour after arXiv publishes new papers at ~21:00 UTC)
  */
 
 import { NextResponse } from "next/server";
@@ -13,6 +15,25 @@ import { papers } from "@/lib/db/schema";
 import { desc, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Calculate the next scheduled fetch time.
+ * arXiv fetch runs daily at 22:00 UTC.
+ */
+function calculateNextFetch(): Date {
+  const now = new Date();
+  const next = new Date(now);
+
+  // Set to 22:00 UTC today
+  next.setUTCHours(22, 0, 0, 0);
+
+  // If it's already past 22:00 UTC today, schedule for tomorrow
+  if (now >= next) {
+    next.setUTCDate(next.getUTCDate() + 1);
+  }
+
+  return next;
+}
 
 export async function GET() {
   try {
@@ -27,23 +48,8 @@ export async function GET() {
 
     const lastFetch = recentPaper[0]?.fetchedAt || null;
 
-    // Calculate next fetch (every 6 hours from last fetch)
-    let nextFetch: Date | null = null;
-    if (lastFetch) {
-      nextFetch = new Date(lastFetch.getTime() + 6 * 60 * 60 * 1000);
-      // If next fetch is in the past, calculate from now
-      if (nextFetch < new Date()) {
-        // Next fetch would be at the next 6-hour interval (0, 6, 12, 18 UTC)
-        const now = new Date();
-        const hour = now.getUTCHours();
-        const nextInterval = Math.ceil(hour / 6) * 6;
-        nextFetch = new Date(now);
-        nextFetch.setUTCHours(nextInterval === 24 ? 0 : nextInterval, 0, 0, 0);
-        if (nextInterval === 24) {
-          nextFetch.setUTCDate(nextFetch.getUTCDate() + 1);
-        }
-      }
-    }
+    // Calculate next fetch (daily at 22:00 UTC)
+    const nextFetch = calculateNextFetch();
 
     // Get total paper count
     const totalResult = await db

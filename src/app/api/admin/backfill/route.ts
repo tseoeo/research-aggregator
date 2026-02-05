@@ -4,6 +4,8 @@ import { papers, paperSources } from "@/lib/db/schema";
 import { summaryQueue, socialMonitorQueue, newsFetchQueue } from "@/lib/queue/queues";
 import { eq, and } from "drizzle-orm";
 import { AI_CATEGORIES } from "@/lib/services/arxiv";
+import { verifyAdminAuth } from "@/lib/auth/admin";
+import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -118,20 +120,33 @@ async function ensureArxivSource(): Promise<number> {
  * POST /api/admin/backfill
  *
  * Backfill papers from all AI categories with pagination.
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
+ *
  * Query params:
- * - secret: admin secret (required)
  * - count: number of papers to fetch (default 500)
  */
 export async function POST(request: NextRequest) {
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
+  }
+
+  // Check if AI is enabled (needed for summary generation)
+  if (!isAiEnabled()) {
+    return NextResponse.json(
+      {
+        error: "AI processing is not available",
+        message: getAiStatusMessage(),
+        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
-    const secret = searchParams.get("secret");
-    const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
-
-    if (secret !== adminSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const targetCount = parseInt(searchParams.get("count") || "500", 10);
     const perPage = 100; // arXiv API max per request
     const pages = Math.ceil(targetCount / perPage);
@@ -201,16 +216,8 @@ export async function POST(request: NextRequest) {
 
       // Process each paper
       for (const paper of fetchedPapers) {
-        // Check if exists
-        const existing = await db
-          .select({ id: papers.id })
-          .from(papers)
-          .where(and(eq(papers.sourceId, sourceId), eq(papers.externalId, paper.arxivId)))
-          .limit(1);
-
-        if (existing.length > 0) continue;
-
-        // Insert new paper
+        // Use onConflictDoNothing to handle race conditions - if another process
+        // inserted the same paper between our check and insert, we skip it
         const result = await db
           .insert(papers)
           .values({
@@ -224,7 +231,13 @@ export async function POST(request: NextRequest) {
             categories: paper.categories,
             primaryCategory: paper.primaryCategory,
           })
+          .onConflictDoNothing({
+            target: [papers.sourceId, papers.externalId],
+          })
           .returning({ id: papers.id });
+
+        // If no row returned, paper already existed - skip
+        if (result.length === 0) continue;
 
         totalNew++;
 
@@ -289,24 +302,24 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/admin/backfill - Show backfill status/info
+ *
+ * Authentication: Authorization: Bearer <ADMIN_SECRET>
  */
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret");
-  const adminSecret = process.env.ADMIN_SECRET || "admin-secret-change-me";
-
-  if (secret !== adminSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify admin auth via Authorization header
+  const auth = verifyAdminAuth(request);
+  if (!auth.authorized) {
+    return auth.error;
   }
 
   return NextResponse.json({
     endpoint: "POST /api/admin/backfill",
     description: "Backfill papers from all AI categories",
+    authentication: "Authorization: Bearer <ADMIN_SECRET>",
     params: {
-      secret: "ADMIN_SECRET (required)",
       count: "Number of papers to fetch (default: 500)",
     },
     categories: AI_CATEGORIES,
-    example: "POST /api/admin/backfill?secret=xxx&count=500",
+    aiStatus: getAiStatusMessage(),
   });
 }

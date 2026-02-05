@@ -29,9 +29,12 @@ const AI_ENABLED = process.env.AI_ENABLED === "true";
 
 /**
  * Schedule recurring arXiv fetch jobs
+ *
+ * Note: arXiv publishes new papers around 21:00 UTC on weekdays.
+ * We schedule the fetch for 22:00 UTC to allow time for processing.
  */
 async function scheduleJobs() {
-  // Schedule arXiv fetch every 6 hours for cs.AI category
+  // Schedule arXiv fetch daily at 22:00 UTC (1 hour after arXiv publishes)
   const existingJobs = await arxivFetchQueue.getRepeatableJobs();
 
   // Remove any existing repeatable jobs first
