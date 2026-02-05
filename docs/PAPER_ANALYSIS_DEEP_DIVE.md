@@ -764,7 +764,10 @@ Tabbed interface with 5 tabs:
    - JSON schema in prompt is duplicated from Zod schema
    - No few-shot examples for edge cases
 
-9. **Missing Temporal Context**: No handling for papers that supersede others
+9. **Business Framing Needs a Core-Claim Anchor**: Business translation is valuable, but there is no single authoritative “what the paper is about” field
+   - Business primitives can dominate the narrative without a short, factual core claim
+   - Readers need a one-sentence scientific summary before the business framing
+10. **Missing Temporal Context**: No handling for papers that supersede others
    - No "this paper obsoletes X" tracking
    - Time-to-value doesn't account for competition
 
@@ -808,6 +811,11 @@ Tabbed interface with 5 tabs:
    - Track provenance (which papers proposed which entries)
    - Enable promotion/rejection with notes
 
+5. **Add a Core Claim Field (Human-Usable Anchor)**
+   - Require a single-sentence summary of the paper’s main scientific contribution
+   - Always display this before business primitives and time-to-value
+   - Makes the business framing more credible and readable
+
 ### Medium Priority
 
 5. **Multi-Model Ensemble**
@@ -843,9 +851,66 @@ Tabbed interface with 5 tabs:
     - Build evaluation dataset
 
 11. **Cost Optimization**
-    - Cache common analysis patterns
-    - Use smaller models for simpler papers
-    - Batch similar papers for efficiency
+   - Cache common analysis patterns
+   - Use smaller models for simpler papers
+   - Batch similar papers for efficiency
+
+---
+
+## Failsafes & Guardrails (Additive)
+
+These are pragmatic safeguards to reduce incorrect output, improve determinism, and prevent bad data from reaching users.
+
+1. **Determinism Guardrail**
+   - Set temperature to `0` for analysis calls
+   - Store a `prompt_hash` and only re-run when it changes or `force=true`
+   - Prevents analysis drift across repeated runs
+
+2. **Evidence Anchoring**
+   - Pre-split abstract into numbered sentences: `S1`, `S2`, `S3`, ...
+   - Require evidence pointers to reference only these IDs
+   - If not available, use `"Not available"`
+
+3. **Low-Confidence Quarantine**
+   - If any of the top-level confidence fields < 0.4, mark the analysis as “low confidence”
+   - Hide business primitives and time-to-value from default UI view in that case
+
+4. **Schema Integrity Checks**
+   - Reject outputs with missing required fields instead of auto-coercing
+   - Store a `status = partial` so failures are visible
+
+5. **Known-Paper Type Guard**
+   - If paper type is “survey” or “dataset,” skip irrelevant fields (constraints/failure modes) or mark as “not applicable”
+
+---
+
+## How To Know The System Works Well (Monitoring & Quality)
+
+Add a lightweight quality dashboard using stored metadata and periodic evaluation.
+
+1. **Determinism Rate**
+   - Track how often re-running the same paper yields the same normalized output
+   - Goal: > 95% match when prompt/model is unchanged
+
+2. **Evidence Coverage**
+   - Percentage of evidence pointers that reference valid `S#` anchors
+   - Goal: > 90% valid evidence anchors
+
+3. **Human Usefulness Score**
+   - Add a simple user feedback toggle: “Helpful / Not helpful”
+   - Track rolling 30-day helpfulness rate
+
+4. **Confidence Distribution**
+   - Monitor distribution of role/time-to-value confidence
+   - If most scores cluster high, adjust prompt to be more conservative
+
+5. **Completeness Rate**
+   - Percentage of analyses that pass strict schema validation without coercion
+   - Goal: > 98%
+
+6. **Drift Alerts**
+   - If a prompt/model change causes > X% shift in core fields, flag and review
+
 
 ---
 

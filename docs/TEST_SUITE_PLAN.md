@@ -16,12 +16,13 @@
 6. [API Route Tests](#3-api-route-tests)
 7. [Database Tests](#4-database-tests)
 8. [Worker Tests](#5-worker-tests)
-9. [E2E Tests](#6-e2e-tests)
-10. [Load/Performance Tests](#7-loadperformance-tests)
-11. [Security Tests](#8-security-tests)
-12. [Priority Matrix](#9-priority-matrix)
-13. [CI/CD Pipeline Configuration](#10-cicd-pipeline-configuration)
-14. [Appendix: Test Data Factories](#appendix-test-data-factories)
+9. [Determinism & Stability Tests](#6-determinism--stability-tests)
+10. [E2E Tests](#7-e2e-tests)
+11. [Load/Performance Tests](#8-loadperformance-tests)
+12. [Security Tests](#9-security-tests)
+13. [Priority Matrix](#10-priority-matrix)
+14. [CI/CD Pipeline Configuration](#11-cicd-pipeline-configuration)
+15. [Appendix: Test Data Factories](#appendix-test-data-factories)
 
 ---
 
@@ -43,6 +44,19 @@ This document outlines a comprehensive test suite for the Research Aggregator ap
 3. **Paper ingestion** - Ensure reliable arXiv data fetching and deduplication
 4. **Authentication flows** - NextAuth integration with GitHub OAuth
 5. **Data integrity** - Race conditions in paper insertion and user operations
+6. **Determinism** - AI analysis repeatability and stability across runs
+
+---
+
+## Corrections & Assumptions (Plan-to-Repo Alignment)
+
+This plan is revised to align with the current codebase and known constraints.
+
+1. **Admin auth currently uses `?secret=` query params** in API routes. Security tests must reflect current behavior and optionally validate a future Bearer-token refactor.
+2. **`parseArxivXml` is not exported** in `src/lib/services/arxiv.ts`. Tests should validate behavior indirectly via public methods unless we explicitly export it.
+3. **`src/lib/ai/config.ts` and `src/lib/auth/admin.ts` do not exist** in the repo today. Tests for these should be marked as “requires implementation” or moved to a future phase.
+4. **NextAuth env vars** in this repo are `AUTH_SECRET`, `AUTH_URL`, `GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET`. The plan’s env var list is updated accordingly.
+5. **Determinism tests are mandatory** because AI output variability is a stated risk. This revision adds determinism-focused tests and metrics.
 
 ---
 
@@ -69,11 +83,15 @@ This document outlines a comprehensive test suite for the Research Aggregator ap
 |-------|------|---------|
 | Unit Tests | Vitest | Fast, ESM-native, TypeScript support |
 | Component Tests | @testing-library/react | React component testing |
-| API Tests | Vitest + node-mocks-http | Next.js API route testing |
+| API Tests | Vitest + next-test-api-route-handler | Next.js route handler testing |
 | Integration Tests | Vitest + Testcontainers | DB/Redis integration |
 | E2E Tests | Playwright | Browser-based user flows |
 | Load Tests | k6 | Performance and load testing |
 | Security Tests | OWASP ZAP | Automated security scanning |
+
+### Determinism & Stability First-Class
+
+Because AI outputs can drift, this plan treats **determinism and stability** as a first-class test category. The suite will include repeatability checks, prompt-hash guarding, and contract tests on normalized outputs.
 
 ---
 
@@ -88,6 +106,12 @@ research-aggregator/
 │   │   ├── services/
 │   │   ├── lib/
 │   │   └── components/
+│   ├── determinism/
+│   │   ├── analysis/
+│   │   └── summaries/
+│   ├── contract/
+│   │   ├── api/
+│   │   └── db/
 │   ├── integration/
 │   │   ├── api/
 │   │   ├── db/
@@ -124,22 +148,24 @@ DATABASE_URL=postgresql://test:test@localhost:5433/research_aggregator_test
 # Redis - Separate test instance
 REDIS_URL=redis://localhost:6380
 
-# Auth - Test credentials
+# Auth - Test credentials (Auth.js v5)
 GITHUB_CLIENT_ID=test_client_id
 GITHUB_CLIENT_SECRET=test_client_secret
-NEXTAUTH_SECRET=test_secret_32_characters_long!!
-NEXTAUTH_URL=http://localhost:3000
+AUTH_SECRET=test_secret_32_characters_long!!
+AUTH_URL=http://localhost:3000
 
 # Admin - Test secret
 ADMIN_SECRET=test_admin_secret_for_testing
 
-# AI - Mock or skip
+# AI - Mock or skip (enable per-test when using mocks)
 AI_ENABLED=false
 OPENROUTER_API_KEY=test_key_for_mocking
 
 # External APIs - Mock
 SERPER_API_KEY=test_serper_key
 ```
+
+**Note:** Determinism tests that exercise AI code paths should set `AI_ENABLED=true` and mock OpenRouter.
 
 ### Vitest Configuration (`vitest.config.ts`)
 
@@ -153,6 +179,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    environmentMatchGlobs: [
+      ['tests/unit/components/**', 'jsdom'],
+      ['tests/e2e/**', 'node'],
+    ],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: ['tests/e2e/**', 'tests/load/**'],
     setupFiles: ['tests/setup/vitest.setup.ts'],
@@ -184,6 +214,8 @@ export default defineConfig({
 npm install -D vitest @vitest/coverage-v8 @testing-library/react @testing-library/jest-dom
 npm install -D @playwright/test msw testcontainers
 npm install -D node-mocks-http
+npm install -D @faker-js/faker next-test-api-route-handler
+npm install -D wait-on
 ```
 
 ---
@@ -193,6 +225,8 @@ npm install -D node-mocks-http
 ### 1.1 ArXiv Service (`src/lib/services/arxiv.ts`)
 
 **File:** `tests/unit/services/arxiv.test.ts`
+
+**Note:** `parseArxivXml` is not exported in the current codebase. Test parsing behavior indirectly by mocking `fetch` and exercising public methods (`fetchRecentPapers`, `fetchByDateRange`, `fetchPaperById`). If you choose to export `parseArxivXml` for testability, update tests accordingly.
 
 | Test Case | Description | Edge Cases |
 |-----------|-------------|------------|
@@ -349,7 +383,7 @@ export function createOpenRouterMock() {
 | `fetchMentionsForPaper` | Deduplicate across platforms | Same content, different platforms |
 | `getMentionStats` | Calculate engagement totals | Zero mentions |
 
-### 1.6 AI Config Helper (`src/lib/ai/config.ts`)
+### 1.6 AI Config Helper (`src/lib/ai/config.ts`) — Future Refactor
 
 **File:** `tests/unit/lib/ai-config.test.ts`
 
@@ -361,7 +395,9 @@ export function createOpenRouterMock() {
 | `getAiStatus` | Return correct status enum | All three states |
 | `getAiStatusMessage` | Return human-readable message | Each status |
 
-### 1.7 Admin Auth Helper (`src/lib/auth/admin.ts`)
+**Note:** This helper does not exist in the current repo. Implement it before enabling these tests.
+
+### 1.7 Admin Auth Helper (`src/lib/auth/admin.ts`) — Future Refactor
 
 **File:** `tests/unit/lib/admin-auth.test.ts`
 
@@ -373,6 +409,8 @@ export function createOpenRouterMock() {
 | `verifyAdminAuth` | Reject wrong secret | Incorrect token value |
 | `verifyAdminAuth` | Error on missing ADMIN_SECRET | Env var not set |
 | `constantTimeCompare` | Prevent timing attacks | Similar strings |
+
+**Note:** Admin routes currently use `?secret=` query params. Treat this helper and its tests as part of a security hardening refactor.
 
 ### 1.8 React Components
 
@@ -596,6 +634,19 @@ describe('ArXiv API Integration', () => {
 });
 ```
 
+### 2.4 Ingestion Integrity (Date Coverage + Dedup)
+
+**File:** `tests/integration/workers/ingestion-integrity.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| Date-range completeness | Fetch by date paginates until `totalResults` reached |
+| Gap detection | Missing dates trigger backfill job creation |
+| Dedup across categories | Same arXiv ID across categories inserts once |
+| Resume partial | If a run fails mid-page, job can resume without duplicates |
+
+**Notes:** If Claude’s ingestion fix adds date-range jobs, these tests should be bound to that job handler.
+
 ---
 
 ## 3. API Route Tests
@@ -610,9 +661,21 @@ describe('ArXiv API Integration', () => {
 |-----------|-----------------|
 | Default request | Returns 20 papers from cs.AI |
 | With category filter | Returns papers from specified category |
-| With search query | Returns matching papers (ilike search) |
+| With search query | Returns matching papers (case-sensitive until `ilike` is implemented) |
 | With limit parameter | Respects limit (max 100) |
 | Empty database | Returns empty array, no error |
+
+### 3.2 Contract Tests (Response Shape)
+
+**File:** `tests/contract/api/papers.contract.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| `/api/papers` contract | Validate response shape with Zod schema |
+| `/api/papers/[id]/analysis` contract | Validate analysis response schema |
+| `/api/status` contract | Validate status response schema |
+
+**Note:** Contract tests prevent silent breaking changes and are a fast, high-signal safety net.
 | Database error | Returns 500 with error message |
 
 **Example Test:**
@@ -1011,6 +1074,17 @@ vi.mock('@/lib/redis', () => ({
 | Platform failures | Continues on single platform failure |
 | Engagement sorting | Returns highest engagement first |
 
+### 5.5 Idempotency & Retry Behavior (Cross-Worker)
+
+**File:** `tests/integration/workers/idempotency.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| Duplicate job ID | Same `jobId` is processed once |
+| Retry without duplication | Retry does not create extra rows |
+| Force re-run | `force=true` re-analysis overwrites correctly |
+| Partial DB failure | Summary generated but DB update fails gracefully |
+
 ### 5.5 News Worker
 
 **File:** `tests/integration/workers/news-worker.test.ts`
@@ -1034,7 +1108,48 @@ vi.mock('@/lib/redis', () => ({
 
 ---
 
-## 6. E2E Tests
+## 6. Determinism & Stability Tests
+
+These tests ensure repeated analyses are stable and outputs are consistent when inputs and prompts are unchanged. This is critical for a human-facing product where analysis drift undermines trust.
+
+### 6.1 Deterministic Output (Mocked LLM)
+
+**File:** `tests/determinism/analysis/analysis-repeatability.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| Same input twice | Run analysis twice with a deterministic mock, compare normalized output |
+| Prompt hash unchanged | Re-run should not overwrite stored analysis unless `force=true` |
+| Evidence anchor compliance | Evidence pointers must reference `S#` anchors only |
+
+**Approach:**
+1. Mock OpenRouter response to be deterministic.
+2. Use the same paper input twice.
+3. Assert identical normalized JSON outputs.
+
+### 6.2 Determinism Guardrails (Real LLM Optional)
+
+**File:** `tests/determinism/analysis/analysis-stability.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| Stability under `temperature=0` | Run twice and compare canonicalized output |
+| Drift detection | Detect changes > X% in key fields |
+
+**Note:** This suite can be marked as “manual” or “nightly” due to cost and nondeterminism.
+
+### 6.3 Summary Repeatability
+
+**File:** `tests/determinism/summaries/summary-repeatability.test.ts`
+
+| Test Case | Description |
+|-----------|-------------|
+| Summary stable structure | Always 3 bullets + 1 eli5 |
+| Summary content stable | Deterministic mock yields identical text |
+
+---
+
+## 7. E2E Tests
 
 ### 6.1 Playwright Configuration
 
@@ -1258,9 +1373,11 @@ test.describe('Admin Pages', () => {
 
 ---
 
-## 7. Load/Performance Tests
+## 8. Load/Performance Tests
 
-### 7.1 k6 Test Scripts
+**Note:** Run load tests only after correctness and determinism tests pass. Load tests without stable data or verified ingestion can produce misleading results.
+
+### 8.1 k6 Test Scripts
 
 **File:** `tests/load/scripts/papers-api.js`
 
@@ -1341,7 +1458,7 @@ export default function () {
 }
 ```
 
-### 7.2 Performance Targets
+### 8.2 Performance Targets
 
 | Endpoint | p50 | p95 | p99 | Max RPS |
 |----------|-----|-----|-----|---------|
@@ -1352,7 +1469,7 @@ export default function () {
 | POST /api/user/saved | <100ms | <300ms | <500ms | 50 |
 | Homepage (SSR) | <500ms | <1000ms | <2000ms | 50 |
 
-### 7.3 Load Test Commands
+### 8.3 Load Test Commands
 
 ```bash
 # Run papers API load test
@@ -1367,9 +1484,9 @@ k6 run --out json=results.json tests/load/scripts/papers-api.js
 
 ---
 
-## 8. Security Tests
+## 9. Security Tests
 
-### 8.1 Authentication Bypass Tests
+### 9.1 Authentication Bypass Tests
 
 **File:** `tests/security/auth-bypass.test.ts`
 
@@ -1377,11 +1494,13 @@ k6 run --out json=results.json tests/load/scripts/papers-api.js
 |-----------|-------------|
 | Admin route without auth | All admin routes return 401 |
 | Admin route with wrong secret | Returns 401, not 403 |
+| Admin route with `?secret=` | Current behavior accepts valid secret (documented) |
+| Admin route with Bearer | Future refactor: accept Bearer token only |
 | User routes without session | Returns 401 |
 | Timing attack resistance | constantTimeCompare used |
-| Secret in URL query | No longer accepted (fixed) |
+| Secret in URL query | Currently accepted; should be removed in security hardening |
 
-### 8.2 Input Validation Tests
+### 9.2 Input Validation Tests
 
 **File:** `tests/security/input-validation.test.ts`
 
@@ -1393,7 +1512,7 @@ k6 run --out json=results.json tests/load/scripts/papers-api.js
 | Oversized request body | Body size limits enforced |
 | Invalid JSON body | Returns 400, not 500 |
 
-### 8.3 Rate Limiting Tests
+### 9.3 Rate Limiting Tests
 
 **File:** `tests/security/rate-limiting.test.ts`
 
@@ -1403,7 +1522,7 @@ k6 run --out json=results.json tests/load/scripts/papers-api.js
 | Auth route rate limit | Prevents brute force |
 | Admin API no abuse | Limited by auth, but consider rate limit |
 
-### 8.4 Secret Exposure Tests
+### 9.4 Secret Exposure Tests
 
 **File:** `tests/security/secrets.test.ts`
 
@@ -1414,7 +1533,7 @@ k6 run --out json=results.json tests/load/scripts/papers-api.js
 | Logs | Secrets redacted |
 | Git history | No committed secrets |
 
-### 8.5 OWASP ZAP Scan Configuration
+### 9.5 OWASP ZAP Scan Configuration
 
 ```yaml
 # zap-baseline.yaml
@@ -1435,7 +1554,7 @@ env:
 
 ---
 
-## 9. Priority Matrix
+## 10. Priority Matrix
 
 ### P0 - Critical (Week 1)
 
@@ -1443,10 +1562,10 @@ env:
 |----------|-------|--------|
 | Security | Admin auth bypass tests | 1 day |
 | Security | Input validation | 1 day |
-| Unit | AI config helper | 0.5 day |
-| Unit | Admin auth helper | 0.5 day |
+| Determinism | Analysis repeatability (mocked) | 1 day |
+| Ingestion | Date-range completeness + gap detection | 1 day |
 | Integration | API auth scenarios | 1 day |
-| **Total** | | **4 days** |
+| **Total** | | **5 days** |
 
 ### P1 - High (Week 2-3)
 
@@ -1455,6 +1574,7 @@ env:
 | Unit | ArxivService | 2 days |
 | Unit | OpenRouterService | 1.5 days |
 | Unit | PaperAnalysisService | 2 days |
+| Contract | API response schemas | 0.5 day |
 | Integration | GET /api/papers | 1 day |
 | Integration | User saved papers API | 1 day |
 | Worker | ArxivWorker | 1.5 days |
@@ -1469,6 +1589,8 @@ env:
 | Unit | SerperService | 1 day |
 | Unit | SocialAggregatorService | 1 day |
 | Unit | React components | 2 days |
+| Unit | AI config helper (if implemented) | 0.5 day |
+| Unit | Admin auth helper (if implemented) | 0.5 day |
 | Integration | Admin APIs | 1 day |
 | Worker | AnalysisWorker | 1.5 days |
 | Worker | Social/News workers | 1 day |
@@ -1490,11 +1612,11 @@ env:
 | Security | OWASP ZAP scan | 0.5 day |
 | **Total** | | **6.5 days** |
 
-### Total Estimated Effort: ~32 days (6-7 weeks)
+### Total Estimated Effort: ~34 days (6-7 weeks)
 
 ---
 
-## 10. CI/CD Pipeline Configuration
+## 11. CI/CD Pipeline Configuration
 
 ### GitHub Actions Workflow
 
@@ -1513,8 +1635,8 @@ env:
   REDIS_URL: redis://localhost:6379
   ADMIN_SECRET: test_admin_secret
   AI_ENABLED: false
-  NEXTAUTH_SECRET: test_secret_32_characters_long!!
-  NEXTAUTH_URL: http://localhost:3000
+  AUTH_SECRET: test_secret_32_characters_long!!
+  AUTH_URL: http://localhost:3000
 
 jobs:
   lint:
@@ -1542,6 +1664,18 @@ jobs:
         with:
           files: ./coverage/coverage-final.json
           flags: unit
+
+  determinism-and-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:determinism
+      - run: npm run test:contract
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -1575,7 +1709,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm run db:push
+      - run: npm run db:migrate
       - run: npm run test:integration
       - uses: codecov/codecov-action@v4
         with:
@@ -1605,8 +1739,10 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps
-      - run: npm run db:push
+      - run: npm run db:migrate
       - run: npm run build
+      - run: npm run start &
+      - run: npx wait-on http://localhost:3000
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -1618,6 +1754,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run start &
+      - run: npx wait-on http://localhost:3000
       - name: OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.11.0
         with:
@@ -1644,11 +1788,13 @@ jobs:
     "test": "vitest",
     "test:unit": "vitest run --coverage tests/unit",
     "test:integration": "vitest run --coverage tests/integration",
+    "test:determinism": "vitest run --coverage tests/determinism",
+    "test:contract": "vitest run --coverage tests/contract",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:load": "k6 run tests/load/scripts/papers-api.js",
     "test:security": "zap-baseline.py -t http://localhost:3000",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e"
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:determinism && npm run test:contract && npm run test:e2e"
   }
 }
 ```
