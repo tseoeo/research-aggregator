@@ -9,6 +9,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { taxonomyEntries, type TaxonomyEntry } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { createHash } from "crypto";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -93,6 +94,8 @@ const publicViewsSchema = z.object({
 });
 
 export const paperCardAnalysisResponseSchema = z.object({
+  // Core claim - single sentence describing main scientific contribution
+  core_claim: z.string().min(1),
   role: z.enum(["Primitive", "Platform", "Proof", "Provocation"]),
   role_confidence: z.number().min(0).max(1),
   time_to_value: z.enum(["Now", "Soon", "Later", "Unknown"]),
@@ -236,6 +239,7 @@ function normalizeAnalysisResponse(raw: unknown): unknown {
   const publicViews = data.public_views as Record<string, unknown> | undefined;
 
   return {
+    core_claim: toString(data.core_claim),
     role: data.role,
     role_confidence: normalizeConfidence(data.role_confidence),
     time_to_value: data.time_to_value,
@@ -274,10 +278,190 @@ function normalizeAnalysisResponse(raw: unknown): unknown {
 export type PaperCardAnalysisResponse = z.infer<typeof paperCardAnalysisResponseSchema>;
 
 // ============================================
+// ANALYSIS STATUS TYPES
+// ============================================
+
+export type AnalysisStatus = "complete" | "partial" | "low_confidence";
+
+export interface AnalysisResult {
+  analysis: PaperCardAnalysisResponse;
+  tokensUsed: number;
+  model: string;
+  promptHash: string;
+  analysisStatus: AnalysisStatus;
+  validationErrors: string[];
+}
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Split abstract into numbered sentences for evidence anchoring
+ * Returns format: "S1: First sentence. S2: Second sentence."
+ */
+function numberAbstractSentences(abstract: string): { numberedAbstract: string; sentenceCount: number } {
+  // Split on sentence boundaries (period, exclamation, question mark followed by space or end)
+  const sentences = abstract
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  const numberedSentences = sentences.map((sentence, index) => `S${index + 1}: ${sentence}`);
+
+  return {
+    numberedAbstract: numberedSentences.join("\n"),
+    sentenceCount: sentences.length,
+  };
+}
+
+/**
+ * Validate that evidence pointers reference valid sentence IDs
+ */
+function validateEvidencePointers(pointers: string[], maxSentence: number): string[] {
+  const errors: string[] = [];
+  const validPattern = /^S\d+(-S\d+)?$|^Not available$/i;
+
+  for (const pointer of pointers) {
+    if (!validPattern.test(pointer)) {
+      errors.push(`Invalid evidence pointer format: "${pointer}"`);
+      continue;
+    }
+
+    // Extract sentence numbers and validate range
+    const matches = pointer.match(/S(\d+)/g);
+    if (matches) {
+      for (const match of matches) {
+        const num = parseInt(match.substring(1), 10);
+        if (num < 1 || num > maxSentence) {
+          errors.push(`Evidence pointer "${pointer}" references invalid sentence (max: S${maxSentence})`);
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Generate hash of prompt for determinism tracking
+ */
+function generatePromptHash(systemPrompt: string, userPrompt: string): string {
+  const combined = systemPrompt + userPrompt;
+  return createHash("sha256").update(combined).digest("hex").substring(0, 64);
+}
+
+/**
+ * Check if any confidence field is below threshold (0.4)
+ * Returns true if any field is low confidence
+ */
+function hasLowConfidence(analysis: PaperCardAnalysisResponse): boolean {
+  const LOW_CONFIDENCE_THRESHOLD = 0.4;
+  return (
+    analysis.role_confidence < LOW_CONFIDENCE_THRESHOLD ||
+    analysis.time_to_value_confidence < LOW_CONFIDENCE_THRESHOLD
+  );
+}
+
+/**
+ * Strict validation that rejects missing required fields instead of auto-coercing
+ */
+function strictValidateAnalysis(raw: unknown): {
+  isValid: boolean;
+  errors: string[];
+  coercedFields: string[];
+} {
+  const errors: string[] = [];
+  const coercedFields: string[] = [];
+
+  if (!raw || typeof raw !== "object") {
+    return { isValid: false, errors: ["Response is not an object"], coercedFields: [] };
+  }
+
+  const data = raw as Record<string, unknown>;
+
+  // Check required top-level fields
+  const requiredFields = [
+    "core_claim",
+    "role",
+    "role_confidence",
+    "time_to_value",
+    "time_to_value_confidence",
+    "interestingness",
+    "business_primitives",
+    "readiness_level",
+    "readiness_justification",
+    "public_views",
+  ];
+
+  for (const field of requiredFields) {
+    if (data[field] === undefined || data[field] === null) {
+      errors.push(`Missing required field: ${field}`);
+    } else if (typeof data[field] === "string" && (data[field] as string).trim() === "") {
+      errors.push(`Empty required field: ${field}`);
+    }
+  }
+
+  // Check interestingness structure
+  if (data.interestingness && typeof data.interestingness === "object") {
+    const interestingness = data.interestingness as Record<string, unknown>;
+    if (!Array.isArray(interestingness.checks) || interestingness.checks.length === 0) {
+      errors.push("Missing or empty interestingness.checks array");
+    }
+    if (typeof interestingness.total_score !== "number") {
+      errors.push("Missing interestingness.total_score");
+    }
+    if (!interestingness.tier) {
+      errors.push("Missing interestingness.tier");
+    }
+  }
+
+  // Check public_views structure
+  if (data.public_views && typeof data.public_views === "object") {
+    const publicViews = data.public_views as Record<string, unknown>;
+    if (!publicViews.hook_sentence) {
+      errors.push("Missing public_views.hook_sentence");
+    }
+    if (!Array.isArray(publicViews["30s_summary"]) || publicViews["30s_summary"].length === 0) {
+      errors.push("Missing or empty public_views.30s_summary");
+    }
+    if (!publicViews["3m_summary"]) {
+      errors.push("Missing public_views.3m_summary");
+    }
+  }
+
+  // Track fields that would need coercion (for partial status)
+  if (data.key_numbers === null || data.key_numbers === undefined) {
+    coercedFields.push("key_numbers (defaulted to [])");
+  }
+  if (data.constraints === null || data.constraints === undefined) {
+    coercedFields.push("constraints (defaulted to [])");
+  }
+  if (data.failure_modes === null || data.failure_modes === undefined) {
+    coercedFields.push("failure_modes (defaulted to [])");
+  }
+  if (data.what_is_missing === null || data.what_is_missing === undefined) {
+    coercedFields.push("what_is_missing (defaulted to [])");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    coercedFields,
+  };
+}
+
+// ============================================
 // SYSTEM PROMPT
 // ============================================
 
-const SYSTEM_PROMPT = `You are an analysis engine that produces a structured PaperCardAnalysis for a public business audience. You must be accurate, skeptical, and never invent results. Output strict JSON matching the schema. If evidence pointers are unknown, use "Not available". Prefer conservative scoring.
+const SYSTEM_PROMPT = `You are an analysis engine that produces a structured PaperCardAnalysis for a public business audience. You must be accurate, skeptical, and never invent results. Output strict JSON matching the schema. Prefer conservative scoring.
+
+## Evidence Anchoring
+The abstract will be provided as numbered sentences (S1, S2, S3...). When providing evidence_pointers, reference these sentence IDs (e.g., "S1", "S2-S3"). If no specific sentence supports a claim, use "Not available".
+
+## Core Claim (REQUIRED)
+Provide a single sentence describing the paper's main scientific contribution. This should be factual and objective, NOT a business interpretation. Example: "The paper introduces a novel attention mechanism that reduces transformer inference time by 40% while maintaining accuracy."
 
 ## Scoring Guidelines
 
@@ -341,6 +525,7 @@ Select 0-2 from: cost, reliability, speed, quality, risk, new_capability
 
 ## Required JSON Schema (follow EXACTLY)
 {
+  "core_claim": "Single sentence describing main scientific contribution",
   "role": "Primitive" | "Platform" | "Proof" | "Provocation",
   "role_confidence": 0.0-1.0,
   "time_to_value": "Now" | "Soon" | "Later" | "Unknown",
@@ -353,7 +538,7 @@ Select 0-2 from: cost, reliability, speed, quality, risk, new_capability
         "check_id": "business_primitive_impact",
         "score": 0 | 1 | 2,
         "answer": "string explaining score",
-        "evidence_pointers": ["section/page refs"],
+        "evidence_pointers": ["S1", "S2-S3"],
         "notes": "optional"
       },
       // ... repeat for delta_specificity, comparison_credibility, real_world_plausibility, evidence_strength, failure_disclosure
@@ -362,7 +547,7 @@ Select 0-2 from: cost, reliability, speed, quality, risk, new_capability
   "business_primitives": {
     "selected": ["cost" | "reliability" | "speed" | "quality" | "risk" | "new_capability"],
     "justification": "string",
-    "evidence_pointers": ["refs"]
+    "evidence_pointers": ["S1", "S2"]
   },
   "key_numbers": [
     {
@@ -371,34 +556,34 @@ Select 0-2 from: cost, reliability, speed, quality, risk, new_capability
       "direction": "up" | "down",
       "baseline": "optional string",
       "conditions": "string",
-      "evidence_pointer": "ref"
+      "evidence_pointer": "S1"
     }
   ],
   "constraints": [
     {
       "constraint": "string",
       "why_it_matters": "string",
-      "evidence_pointer": "ref"
+      "evidence_pointer": "S1"
     }
   ],
   "failure_modes": [
     {
       "failure_mode": "string",
       "why_it_matters": "string",
-      "evidence_pointer": "ref"
+      "evidence_pointer": "S1"
     }
   ],
   "what_is_missing": ["string array of gaps"],
   "readiness_level": "research_only" | "prototype_candidate" | "deployable_with_work",
   "readiness_justification": "string",
-  "readiness_evidence_pointers": ["refs"],
+  "readiness_evidence_pointers": ["S1", "S2"],
   "use_case_mapping": [
     {
       "use_case_id": "string",
       "use_case_name": "string from taxonomy",
       "fit_confidence": "low" | "med" | "high",
       "because": "string",
-      "evidence_pointers": ["refs"]
+      "evidence_pointers": ["S1"]
     }
   ],
   "taxonomy_proposals": [],
@@ -455,11 +640,12 @@ export class PaperAnalysisService {
 
   /**
    * Build the user prompt with paper data and taxonomy context
+   * Returns the prompt and sentence count for evidence validation
    */
   private buildUserPrompt(
     paper: { title: string; abstract: string; authors?: string[]; year?: number },
     taxonomy: TaxonomyEntry[]
-  ): string {
+  ): { prompt: string; sentenceCount: number } {
     const taxonomyContext = taxonomy
       .map((t) => {
         return `- ${t.name} (${t.status})
@@ -468,33 +654,41 @@ export class PaperAnalysisService {
       })
       .join("\n");
 
-    return `Analyze this research paper and produce a PaperCardAnalysis JSON.
+    // Pre-process abstract into numbered sentences for evidence anchoring
+    const { numberedAbstract, sentenceCount } = numberAbstractSentences(paper.abstract);
+
+    const prompt = `Analyze this research paper and produce a PaperCardAnalysis JSON.
 
 ## Paper Metadata
 Title: ${paper.title}
 ${paper.authors?.length ? `Authors: ${paper.authors.join(", ")}` : ""}
 ${paper.year ? `Year: ${paper.year}` : ""}
 
-## Abstract
-${paper.abstract}
+## Abstract (Numbered Sentences for Evidence Anchoring)
+${numberedAbstract}
 
 ## Available Use-Case Taxonomy
 ${taxonomyContext || "No existing taxonomy entries."}
 
 ## Instructions
-1. Assign role (Primitive/Platform/Proof/Provocation) with confidence 0-1
-2. Assign time_to_value (Now/Soon/Later/Unknown) with confidence 0-1
-3. Select 0-2 business primitives affected
-4. Score all 6 interestingness checks (0/1/2) with answers and evidence pointers
-5. Extract up to 3 key numbers with conditions
-6. List up to 3 constraints and up to 3 failure modes
-7. List what's missing in the paper
-8. Determine readiness level with justification
-9. Map to 0-5 existing use-cases with confidence and "because"
-10. If no existing use-case fits well, propose at most 1 new provisional entry
-11. Generate public views (hook, 30s summary, 3m summary, optional 8m addendum)
+1. Write a single-sentence core_claim describing the paper's main scientific contribution
+2. Assign role (Primitive/Platform/Proof/Provocation) with confidence 0-1
+3. Assign time_to_value (Now/Soon/Later/Unknown) with confidence 0-1
+4. Select 0-2 business primitives affected
+5. Score all 6 interestingness checks (0/1/2) with answers and evidence pointers (use S1, S2, etc.)
+6. Extract up to 3 key numbers with conditions
+7. List up to 3 constraints and up to 3 failure modes
+8. List what's missing in the paper
+9. Determine readiness level with justification
+10. Map to 0-5 existing use-cases with confidence and "because"
+11. If no existing use-case fits well, propose at most 1 new provisional entry
+12. Generate public views (hook, 30s summary, 3m summary, optional 8m addendum)
+
+IMPORTANT: Use sentence IDs (S1, S2, S3, etc.) for evidence_pointers. If no sentence supports a claim, use "Not available".
 
 Output JSON only, matching the schema exactly.`;
+
+    return { prompt, sentenceCount };
   }
 
   /**
@@ -507,11 +701,7 @@ Output JSON only, matching the schema exactly.`;
       authors?: string[];
       year?: number;
     }
-  ): Promise<{
-    analysis: PaperCardAnalysisResponse;
-    tokensUsed: number;
-    model: string;
-  }> {
+  ): Promise<AnalysisResult> {
     if (!this.apiKey) {
       throw new Error("OpenRouter API key not configured");
     }
@@ -519,17 +709,20 @@ Output JSON only, matching the schema exactly.`;
     // Load taxonomy context
     const taxonomy = await this.loadTaxonomyContext();
 
-    // Build prompts
-    const userPrompt = this.buildUserPrompt(paper, taxonomy);
+    // Build prompts with numbered sentences
+    const { prompt: userPrompt, sentenceCount } = this.buildUserPrompt(paper, taxonomy);
 
-    // Make API call
+    // Generate prompt hash for determinism tracking
+    const promptHash = generatePromptHash(SYSTEM_PROMPT, userPrompt);
+
+    // Make API call with temperature 0 for determinism
     const requestBody: Record<string, unknown> = {
       model: this.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.2, // Low temperature for consistency
+      temperature: 0, // Determinism guardrail: temperature 0 for consistent output
       max_tokens: 8000, // DTL-P analysis requires substantial output
     };
 
@@ -541,7 +734,9 @@ Output JSON only, matching the schema exactly.`;
     console.log(`[PaperAnalysis] [AI-CALL] Requesting DTL-P analysis`);
     console.log(`[PaperAnalysis] [AI-CALL]   Model: ${this.model}`);
     console.log(`[PaperAnalysis] [AI-CALL]   Title: ${paper.title.substring(0, 60)}...`);
-    console.log(`[PaperAnalysis] [AI-CALL]   Max tokens: 8000 (analysis is expensive)`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Prompt hash: ${promptHash.substring(0, 16)}...`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Abstract sentences: ${sentenceCount}`);
+    console.log(`[PaperAnalysis] [AI-CALL]   Max tokens: 8000, temperature: 0`);
 
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
@@ -590,6 +785,20 @@ Output JSON only, matching the schema exactly.`;
       throw new Error(`Failed to parse OpenRouter response as JSON: ${content.substring(0, 500)}`);
     }
 
+    // Schema Integrity Check: Strict validation before normalization
+    const strictValidation = strictValidateAnalysis(parsed);
+    const allValidationErrors: string[] = [...strictValidation.errors];
+
+    if (!strictValidation.isValid) {
+      console.warn("[PaperAnalysis] Strict validation failed, marking as partial:");
+      strictValidation.errors.forEach(e => console.warn(`  - ${e}`));
+    }
+
+    if (strictValidation.coercedFields.length > 0) {
+      console.log("[PaperAnalysis] Fields requiring coercion:");
+      strictValidation.coercedFields.forEach(f => console.log(`  - ${f}`));
+    }
+
     // Normalize the raw response to handle common LLM inconsistencies
     const normalized = normalizeAnalysisResponse(parsed);
 
@@ -598,16 +807,86 @@ Output JSON only, matching the schema exactly.`;
     if (!validated.success) {
       console.error("[PaperAnalysis] Validation errors:", validated.error.issues);
       console.error("[PaperAnalysis] Normalized data:", JSON.stringify(normalized, null, 2).substring(0, 1000));
-      // Try to salvage what we can - for now, throw
+
+      // Add Zod errors to validation errors list
+      validated.error.issues.forEach(issue => {
+        allValidationErrors.push(`${issue.path.join(".")}: ${issue.message}`);
+      });
+
       throw new Error(
         `Response validation failed: ${validated.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`
       );
     }
 
+    // Validate evidence pointers reference valid sentence IDs
+    const evidenceErrors: string[] = [];
+
+    // Check all evidence pointer fields
+    const checkEvidencePointers = (pointers: string[], context: string) => {
+      const errors = validateEvidencePointers(pointers, sentenceCount);
+      errors.forEach(e => evidenceErrors.push(`${context}: ${e}`));
+    };
+
+    // Validate interestingness checks evidence pointers
+    validated.data.interestingness.checks.forEach(check => {
+      checkEvidencePointers(check.evidence_pointers, `interestingness.${check.check_id}`);
+    });
+
+    // Validate business primitives evidence pointers
+    checkEvidencePointers(validated.data.business_primitives.evidence_pointers, "business_primitives");
+
+    // Validate readiness evidence pointers
+    checkEvidencePointers(validated.data.readiness_evidence_pointers, "readiness");
+
+    // Validate key numbers evidence pointers
+    validated.data.key_numbers.forEach((kn, i) => {
+      checkEvidencePointers([kn.evidence_pointer], `key_numbers[${i}]`);
+    });
+
+    // Validate constraints evidence pointers
+    validated.data.constraints.forEach((c, i) => {
+      checkEvidencePointers([c.evidence_pointer], `constraints[${i}]`);
+    });
+
+    // Validate failure modes evidence pointers
+    validated.data.failure_modes.forEach((fm, i) => {
+      checkEvidencePointers([fm.evidence_pointer], `failure_modes[${i}]`);
+    });
+
+    // Validate use case mapping evidence pointers
+    validated.data.use_case_mapping.forEach((ucm, i) => {
+      checkEvidencePointers(ucm.evidence_pointers, `use_case_mapping[${i}]`);
+    });
+
+    if (evidenceErrors.length > 0) {
+      console.warn("[PaperAnalysis] Evidence pointer validation warnings:");
+      evidenceErrors.forEach(e => console.warn(`  - ${e}`));
+      allValidationErrors.push(...evidenceErrors);
+    }
+
+    // Determine analysis status
+    let analysisStatus: AnalysisStatus = "complete";
+
+    // Check for low confidence (any confidence < 0.4)
+    if (hasLowConfidence(validated.data)) {
+      analysisStatus = "low_confidence";
+      console.log(`[PaperAnalysis] Low confidence detected: role=${validated.data.role_confidence}, ttv=${validated.data.time_to_value_confidence}`);
+    }
+
+    // Check for partial status (missing fields or validation errors)
+    if (!strictValidation.isValid || strictValidation.coercedFields.length > 0) {
+      analysisStatus = "partial";
+    }
+
+    console.log(`[PaperAnalysis] Analysis status: ${analysisStatus}`);
+
     return {
       analysis: validated.data,
       tokensUsed: data.usage?.total_tokens || 0,
       model: data.model || this.model,
+      promptHash,
+      analysisStatus,
+      validationErrors: allValidationErrors,
     };
   }
 

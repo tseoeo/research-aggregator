@@ -7,7 +7,7 @@
 
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../../redis";
-import { PaperAnalysisService, type PaperCardAnalysisResponse } from "../../services/paper-analysis";
+import { PaperAnalysisService, type PaperCardAnalysisResponse, type AnalysisStatus } from "../../services/paper-analysis";
 import { db } from "../../db";
 import {
   paperCardAnalyses,
@@ -16,7 +16,7 @@ import {
 } from "../../db/schema";
 import { eq, and, sql } from "drizzle-orm";
 
-const ANALYSIS_VERSION = "dtlp_v1";
+const ANALYSIS_VERSION = "dtlp_v2"; // Incremented for new schema with core_claim, prompt_hash, etc.
 
 export interface AnalysisJobData {
   paperId: string;
@@ -38,6 +38,8 @@ export interface AnalysisJobResult {
   useCasesMapped: number;
   tokensUsed: number;
   model: string;
+  analysisStatus: AnalysisStatus;
+  coreClaim?: string;
 }
 
 /**
@@ -48,16 +50,29 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
 
   console.log(`[Analysis Worker] Processing paper: ${paperId}${requestedModel ? ` with model: ${requestedModel}` : ''}`);
 
-  // Check if analysis already exists (idempotency)
+  const analysisService = new PaperAnalysisService(undefined, requestedModel);
+
+  if (!analysisService.isConfigured()) {
+    throw new Error("OpenRouter API key not configured");
+  }
+
+  // Check if analysis already exists (idempotency with prompt hash check)
   if (!force) {
     const existing = await db
-      .select({ id: paperCardAnalyses.id, version: paperCardAnalyses.analysisVersion })
+      .select({
+        id: paperCardAnalyses.id,
+        version: paperCardAnalyses.analysisVersion,
+        promptHash: paperCardAnalyses.promptHash,
+        analysisStatus: paperCardAnalyses.analysisStatus,
+      })
       .from(paperCardAnalyses)
       .where(eq(paperCardAnalyses.paperId, paperId))
       .limit(1);
 
     if (existing.length > 0 && existing[0].version === ANALYSIS_VERSION) {
-      console.log(`[Analysis Worker] Analysis already exists for ${paperId}, skipping`);
+      // Determinism guardrail: Only skip if we have same version
+      // Future enhancement: could also check if prompt hash matches
+      console.log(`[Analysis Worker] Analysis already exists for ${paperId} (v${existing[0].version}), skipping`);
       return {
         paperId,
         analysisId: existing[0].id,
@@ -68,18 +83,13 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
         useCasesMapped: 0,
         tokensUsed: 0,
         model: "none",
+        analysisStatus: (existing[0].analysisStatus as AnalysisStatus) || "complete",
       };
     }
   }
 
-  const analysisService = new PaperAnalysisService(undefined, requestedModel);
-
-  if (!analysisService.isConfigured()) {
-    throw new Error("OpenRouter API key not configured");
-  }
-
   // Generate analysis
-  const { analysis, tokensUsed, model } = await analysisService.analyzePaper({
+  const { analysis, tokensUsed, model, promptHash, analysisStatus, validationErrors } = await analysisService.analyzePaper({
     title,
     abstract,
     authors,
@@ -89,20 +99,29 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
   console.log(
     `[Analysis Worker] Generated analysis for ${paperId}: ` +
     `role=${analysis.role}, ttv=${analysis.time_to_value}, ` +
-    `score=${analysis.interestingness.total_score}, tokens=${tokensUsed}`
+    `score=${analysis.interestingness.total_score}, tokens=${tokensUsed}, ` +
+    `status=${analysisStatus}, core_claim=${analysis.core_claim.substring(0, 50)}...`
   );
 
-  // Delete existing analysis if force re-run
-  if (force) {
+  // Delete existing analysis if force re-run or version upgrade
+  const existingToDelete = await db
+    .select({ id: paperCardAnalyses.id })
+    .from(paperCardAnalyses)
+    .where(eq(paperCardAnalyses.paperId, paperId))
+    .limit(1);
+
+  if (existingToDelete.length > 0) {
+    console.log(`[Analysis Worker] Deleting existing analysis for ${paperId} (upgrading or force)`);
     await db.delete(paperCardAnalyses).where(eq(paperCardAnalyses.paperId, paperId));
   }
 
-  // Insert analysis
+  // Insert analysis with new fields
   const insertResult = await db
     .insert(paperCardAnalyses)
     .values({
       paperId,
       analysisVersion: ANALYSIS_VERSION,
+      coreClaim: analysis.core_claim,
       role: analysis.role,
       roleConfidence: analysis.role_confidence,
       timeToValue: analysis.time_to_value,
@@ -118,6 +137,9 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
       readinessEvidencePointers: analysis.readiness_evidence_pointers,
       publicViews: analysis.public_views,
       taxonomyProposals: analysis.taxonomy_proposals.length > 0 ? analysis.taxonomy_proposals : null,
+      promptHash,
+      analysisStatus,
+      validationErrors: validationErrors.length > 0 ? validationErrors : null,
       analysisModel: model,
       tokensUsed,
     })
@@ -192,7 +214,7 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
 
   console.log(
     `[Analysis Worker] Completed analysis for ${paperId}: ` +
-    `${useCasesMapped} use-cases mapped, ${analysis.taxonomy_proposals.length} proposals`
+    `${useCasesMapped} use-cases mapped, ${analysis.taxonomy_proposals.length} proposals, status=${analysisStatus}`
   );
 
   return {
@@ -205,6 +227,8 @@ async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJo
     useCasesMapped,
     tokensUsed,
     model,
+    analysisStatus,
+    coreClaim: analysis.core_claim,
   };
 }
 

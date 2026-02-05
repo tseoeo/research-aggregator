@@ -11,6 +11,8 @@ import {
   BusinessPrimitiveBadge,
   FitConfidenceBadge,
   ConfidenceIndicator,
+  AnalysisStatusBadge,
+  LowConfidenceWarning,
 } from "./analysis-badges";
 import {
   ArrowUpRight,
@@ -20,6 +22,7 @@ import {
   CheckCircle2,
   Target,
   Info,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +87,8 @@ export interface PublicViews {
 }
 
 export interface PaperAnalysis {
+  // Core claim - single sentence describing main scientific contribution
+  coreClaim?: string;
   role: "Primitive" | "Platform" | "Proof" | "Provocation";
   roleConfidence: number;
   timeToValue: "Now" | "Soon" | "Later" | "Unknown";
@@ -99,6 +104,8 @@ export interface PaperAnalysis {
   readinessEvidencePointers?: string[];
   useCaseMappings: UseCaseMapping[];
   publicViews: PublicViews;
+  // Analysis status for quality control
+  analysisStatus?: "complete" | "partial" | "low_confidence";
 }
 
 interface AnalysisPanelProps {
@@ -111,17 +118,57 @@ interface AnalysisPanelProps {
 // ============================================
 
 export function AnalysisPanel({ analysis, className }: AnalysisPanelProps) {
+  const hasLowConfidence = analysis.roleConfidence < 0.5 || analysis.timeToValueConfidence < 0.5;
+
   return (
     <div className={cn("space-y-4", className)}>
+      {/* Core Claim - displayed BEFORE business badges */}
+      {analysis.coreClaim && (
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/50 p-3">
+          <div className="flex items-start gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground font-medium mb-1">Core Scientific Claim</p>
+              <p className="text-sm leading-relaxed">{analysis.coreClaim}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Analysis Status Warning */}
+      {(analysis.analysisStatus === "low_confidence" || analysis.analysisStatus === "partial") && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              {analysis.analysisStatus === "low_confidence" &&
+                "This analysis has low confidence scores. Treat the classifications with caution."
+              }
+              {analysis.analysisStatus === "partial" &&
+                "This analysis is incomplete. Some fields may be missing or inaccurate."
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Quick Overview Badges */}
       <div className="flex flex-wrap gap-2">
+        {analysis.analysisStatus && analysis.analysisStatus !== "complete" && (
+          <AnalysisStatusBadge status={analysis.analysisStatus} />
+        )}
+        {hasLowConfidence && !analysis.analysisStatus && (
+          <LowConfidenceWarning />
+        )}
         <RoleBadge
           role={analysis.role}
           confidence={analysis.roleConfidence}
+          showConfidenceBar
         />
         <TimeToValueBadge
           ttv={analysis.timeToValue}
           confidence={analysis.timeToValueConfidence}
+          showConfidenceBar
         />
         <InterestBadge
           tier={analysis.interestingness.tier}

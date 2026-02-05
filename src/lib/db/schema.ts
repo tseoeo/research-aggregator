@@ -410,6 +410,9 @@ export const paperCardAnalyses = pgTable(
       .references(() => papers.id, { onDelete: "cascade" }),
     analysisVersion: varchar("analysis_version", { length: 50 }).notNull().default("dtlp_v1"),
 
+    // Core claim - single sentence describing main scientific contribution
+    coreClaim: text("core_claim"),
+
     // Forced labels
     role: varchar("role", { length: 50 }).notNull(), // Primitive | Platform | Proof | Provocation
     roleConfidence: doublePrecision("role_confidence").notNull(),
@@ -451,6 +454,18 @@ export const paperCardAnalyses = pgTable(
     // Taxonomy proposals (if any new use-cases proposed)
     // [{ type, proposed_name, definition, inclusions, exclusions, synonyms, examples, rationale }]
     taxonomyProposals: jsonb("taxonomy_proposals"),
+
+    // Determinism guardrail - hash of prompt used for analysis
+    promptHash: varchar("prompt_hash", { length: 64 }),
+
+    // Analysis status for quality control
+    // complete: all fields validated successfully
+    // partial: some fields missing or failed validation
+    // low_confidence: any confidence field < 0.4
+    analysisStatus: varchar("analysis_status", { length: 50 }).default("complete"),
+
+    // Fields that failed validation (for partial status)
+    validationErrors: text("validation_errors").array(),
 
     // Metadata
     analysisModel: varchar("analysis_model", { length: 100 }),

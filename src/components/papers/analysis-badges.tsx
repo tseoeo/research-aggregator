@@ -20,6 +20,8 @@ import {
   Rocket,
   Beaker,
   Package,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 
 // ============================================
@@ -77,6 +79,7 @@ interface RoleBadgeProps extends VariantProps<typeof roleBadgeVariants> {
   role: "Primitive" | "Platform" | "Proof" | "Provocation";
   confidence?: number;
   showLabel?: boolean;
+  showConfidenceBar?: boolean;
   className?: string;
 }
 
@@ -84,31 +87,53 @@ export function RoleBadge({
   role,
   confidence,
   showLabel = false,
+  showConfidenceBar = false,
   className,
 }: RoleBadgeProps) {
   const Icon = roleIcons[role];
   const info = roleInfo[role];
+  const isLowConfidence = confidence !== undefined && confidence < 0.5;
 
   const badge = (
-    <span className={cn(roleBadgeVariants({ role }), className)}>
+    <span className={cn(
+      roleBadgeVariants({ role }),
+      isLowConfidence && "border border-red-300 dark:border-red-700",
+      className
+    )}>
       <Icon className="h-3.5 w-3.5" />
       {showLabel && <span className="text-[10px] opacity-70 mr-0.5">Type:</span>}
       {info.label}
       {confidence !== undefined && (
-        <span className="ml-0.5 opacity-60">
+        <span className={cn(
+          "ml-0.5",
+          isLowConfidence ? "text-red-500 font-medium" : "opacity-60"
+        )}>
           ({Math.round(confidence * 100)}%)
         </span>
       )}
+      {isLowConfidence && <span className="text-red-500 ml-0.5">!</span>}
     </span>
   );
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <div className="inline-flex flex-col items-start gap-0.5">
+          {badge}
+          {showConfidenceBar && confidence !== undefined && (
+            <ConfidenceIndicator confidence={confidence} size="sm" showWarning={false} />
+          )}
+        </div>
+      </TooltipTrigger>
       <TooltipContent className="max-w-xs">
         <p className="font-medium mb-1">Research Type: {info.label}</p>
         <p className="text-xs opacity-90">{info.description}</p>
         <p className="text-xs opacity-70 mt-1 italic">e.g., {info.example}</p>
+        {isLowConfidence && (
+          <p className="text-xs text-red-500 mt-1 font-medium">
+            Low confidence - treat with caution
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -169,6 +194,7 @@ interface TimeToValueBadgeProps extends VariantProps<typeof ttvBadgeVariants> {
   ttv: "Now" | "Soon" | "Later" | "Unknown";
   confidence?: number;
   showLabel?: boolean;
+  showConfidenceBar?: boolean;
   className?: string;
 }
 
@@ -176,31 +202,53 @@ export function TimeToValueBadge({
   ttv,
   confidence,
   showLabel = false,
+  showConfidenceBar = false,
   className,
 }: TimeToValueBadgeProps) {
   const Icon = ttvIcons[ttv];
   const info = ttvInfo[ttv];
+  const isLowConfidence = confidence !== undefined && confidence < 0.5;
 
   const badge = (
-    <span className={cn(ttvBadgeVariants({ ttv }), className)}>
+    <span className={cn(
+      ttvBadgeVariants({ ttv }),
+      isLowConfidence && "border border-red-300 dark:border-red-700",
+      className
+    )}>
       <Icon className="h-3.5 w-3.5" />
       {showLabel && <span className="text-[10px] opacity-70 mr-0.5">Value:</span>}
       {info.label}
       {confidence !== undefined && (
-        <span className="ml-0.5 opacity-60">
+        <span className={cn(
+          "ml-0.5",
+          isLowConfidence ? "text-red-500 font-medium" : "opacity-60"
+        )}>
           ({Math.round(confidence * 100)}%)
         </span>
       )}
+      {isLowConfidence && <span className="text-red-500 ml-0.5">!</span>}
     </span>
   );
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <div className="inline-flex flex-col items-start gap-0.5">
+          {badge}
+          {showConfidenceBar && confidence !== undefined && (
+            <ConfidenceIndicator confidence={confidence} size="sm" showWarning={false} />
+          )}
+        </div>
+      </TooltipTrigger>
       <TooltipContent className="max-w-xs">
         <p className="font-medium mb-1">Time to Business Value: {info.label}</p>
         <p className="text-xs opacity-90">{info.description}</p>
         <p className="text-xs opacity-70 mt-1">Timeline: {info.timeline}</p>
+        {isLowConfidence && (
+          <p className="text-xs text-red-500 mt-1 font-medium">
+            Low confidence - treat with caution
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -373,35 +421,144 @@ export function ReadinessBadge({
 interface ConfidenceIndicatorProps {
   confidence: number;
   size?: "sm" | "md";
+  showWarning?: boolean;
   className?: string;
 }
 
 export function ConfidenceIndicator({
   confidence,
   size = "sm",
+  showWarning = true,
   className,
 }: ConfidenceIndicatorProps) {
   const percentage = Math.round(confidence * 100);
   const barWidth = size === "sm" ? "w-12" : "w-16";
   const barHeight = size === "sm" ? "h-1" : "h-1.5";
+  const isLowConfidence = confidence < 0.5;
 
   return (
-    <div className={cn("flex items-center gap-1.5", className)}>
-      <div className={cn("rounded-full bg-muted overflow-hidden", barWidth, barHeight)}>
-        <div
-          className={cn(
-            "h-full rounded-full transition-all",
-            confidence >= 0.7
-              ? "bg-emerald-500"
-              : confidence >= 0.4
-              ? "bg-amber-500"
-              : "bg-gray-400"
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={cn("flex items-center gap-1.5", className)}>
+          <div className={cn("rounded-full bg-muted overflow-hidden", barWidth, barHeight)}>
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                confidence >= 0.7
+                  ? "bg-emerald-500"
+                  : confidence >= 0.5
+                  ? "bg-amber-500"
+                  : "bg-red-400"
+              )}
+              style={{ width: `${percentage}%` }}
+            />
+          </div>
+          <span className={cn(
+            "text-xs",
+            isLowConfidence && showWarning ? "text-red-500 font-medium" : "text-muted-foreground"
+          )}>
+            {percentage}%
+          </span>
+          {isLowConfidence && showWarning && (
+            <span className="text-red-500" title="Low confidence">!</span>
           )}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">{percentage}%</span>
-    </div>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p className="text-xs">
+          {confidence >= 0.7 && "High confidence"}
+          {confidence >= 0.5 && confidence < 0.7 && "Moderate confidence"}
+          {confidence < 0.5 && "Low confidence - treat with caution"}
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ============================================
+// LOW CONFIDENCE WARNING BADGE
+// ============================================
+
+interface LowConfidenceWarningProps {
+  className?: string;
+}
+
+export function LowConfidenceWarning({ className }: LowConfidenceWarningProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+          "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800",
+          className
+        )}>
+          <HelpCircle className="h-3 w-3" />
+          Low Confidence
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <p className="font-medium mb-1">Low Confidence Analysis</p>
+        <p className="text-xs opacity-90">
+          One or more confidence scores are below 50%. This analysis should be treated with caution
+          and may benefit from manual review.
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ============================================
+// ANALYSIS STATUS BADGE
+// ============================================
+
+const statusBadgeVariants = cva(
+  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+  {
+    variants: {
+      status: {
+        complete: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+        partial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+        low_confidence: "bg-red-500/10 text-red-600 dark:text-red-400",
+      },
+    },
+    defaultVariants: {
+      status: "complete",
+    },
+  }
+);
+
+interface AnalysisStatusBadgeProps {
+  status: "complete" | "partial" | "low_confidence";
+  className?: string;
+}
+
+export function AnalysisStatusBadge({ status, className }: AnalysisStatusBadgeProps) {
+  const labels = {
+    complete: "Complete",
+    partial: "Partial",
+    low_confidence: "Low Confidence",
+  };
+
+  const descriptions = {
+    complete: "All fields validated successfully",
+    partial: "Some fields missing or failed validation",
+    low_confidence: "One or more confidence scores below threshold",
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn(statusBadgeVariants({ status }), className)}>
+          {status === "complete" && <CheckCircle className="h-3 w-3" />}
+          {status === "partial" && <AlertCircle className="h-3 w-3" />}
+          {status === "low_confidence" && <HelpCircle className="h-3 w-3" />}
+          {labels[status]}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p className="text-xs">{descriptions[status]}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -495,25 +652,40 @@ export function FitConfidenceBadge({
 
 interface AnalysisBadgesRowProps {
   role: "Primitive" | "Platform" | "Proof" | "Provocation";
+  roleConfidence?: number;
   timeToValue: "Now" | "Soon" | "Later" | "Unknown";
+  timeToValueConfidence?: number;
   interestTier: "low" | "moderate" | "high" | "very_high";
   interestScore: number;
   readinessLevel: "research_only" | "prototype_candidate" | "deployable_with_work";
+  analysisStatus?: "complete" | "partial" | "low_confidence";
   className?: string;
 }
 
 export function AnalysisBadgesRow({
   role,
+  roleConfidence,
   timeToValue,
+  timeToValueConfidence,
   interestTier,
   interestScore,
   readinessLevel,
+  analysisStatus,
   className,
 }: AnalysisBadgesRowProps) {
+  const hasLowConfidence = (roleConfidence !== undefined && roleConfidence < 0.5) ||
+    (timeToValueConfidence !== undefined && timeToValueConfidence < 0.5);
+
   return (
     <div className={cn("flex flex-wrap gap-1.5", className)}>
-      <RoleBadge role={role} />
-      <TimeToValueBadge ttv={timeToValue} />
+      {analysisStatus && analysisStatus !== "complete" && (
+        <AnalysisStatusBadge status={analysisStatus} />
+      )}
+      {hasLowConfidence && !analysisStatus && (
+        <LowConfidenceWarning />
+      )}
+      <RoleBadge role={role} confidence={roleConfidence} />
+      <TimeToValueBadge ttv={timeToValue} confidence={timeToValueConfidence} />
       <InterestBadge tier={interestTier} score={interestScore} />
       <ReadinessBadge level={readinessLevel} />
     </div>
