@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, Sparkles, TrendingUp } from "lucide-react";
+import { Menu, Sparkles, TrendingUp, BookOpen } from "lucide-react";
 import { HeaderAuth } from "@/components/auth/header-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Latest", icon: Sparkles },
   { href: "/trending", label: "Trending", icon: TrendingUp },
+  { href: "/about", label: "How It Works", icon: BookOpen },
 ];
 
 export function Header() {
