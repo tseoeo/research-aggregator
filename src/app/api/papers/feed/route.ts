@@ -27,11 +27,9 @@ import {
 } from "@/lib/db/schema";
 import {
   eq,
-  desc,
   asc,
   sql,
   and,
-  arrayContains,
   inArray,
   gte,
   isNotNull,
@@ -126,8 +124,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch papers with v3 analysis
+    // No DISTINCT ON needed — the UNIQUE(paper_id, analysis_version) constraint
+    // on paper_analyses_v3 guarantees at most one row per paper from the LEFT JOIN.
     const feedPapers = await db
-      .selectDistinctOn([papers.id], {
+      .select({
         // Paper fields
         id: papers.id,
         externalId: papers.externalId,
