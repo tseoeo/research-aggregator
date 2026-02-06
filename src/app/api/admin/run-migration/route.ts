@@ -1,6 +1,6 @@
 /**
- * One-time migration endpoint to create paper_analyses_v3 table.
- * Remove this endpoint after the table is created.
+ * Migration endpoint for v3 schema changes.
+ * Idempotent — safe to run multiple times.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,25 +16,12 @@ export async function POST(request: NextRequest) {
     return auth.error;
   }
 
+  const results: string[] = [];
+
   try {
-    // Check if table already exists
-    const tableCheck = await db.execute(sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables
-        WHERE table_schema = 'public'
-        AND table_name = 'paper_analyses_v3'
-      ) as table_exists
-    `);
-
-    const exists = (tableCheck as unknown as { table_exists: boolean }[])?.[0]?.table_exists === true;
-
-    if (exists) {
-      return NextResponse.json({ message: "Table paper_analyses_v3 already exists", created: false });
-    }
-
-    // Create the table
+    // 1. Create table if not exists
     await db.execute(sql`
-      CREATE TABLE paper_analyses_v3 (
+      CREATE TABLE IF NOT EXISTS paper_analyses_v3 (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         paper_id UUID NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
         hook_sentence TEXT NOT NULL,
@@ -57,19 +44,29 @@ export async function POST(request: NextRequest) {
         CONSTRAINT paper_analyses_v3_paper_version UNIQUE (paper_id, analysis_version)
       )
     `);
+    results.push("Table paper_analyses_v3: ensured");
 
-    // Create indexes
-    await db.execute(sql`CREATE INDEX idx_paper_analyses_v3_paper_id ON paper_analyses_v3(paper_id)`);
-    await db.execute(sql`CREATE INDEX idx_paper_analyses_v3_practical_value ON paper_analyses_v3(practical_value_total)`);
-    await db.execute(sql`CREATE INDEX idx_paper_analyses_v3_readiness ON paper_analyses_v3(readiness_level)`);
-    await db.execute(sql`CREATE INDEX idx_paper_analyses_v3_time_to_value ON paper_analyses_v3(time_to_value)`);
-    await db.execute(sql`CREATE INDEX idx_paper_analyses_v3_what_kind ON paper_analyses_v3(what_kind)`);
+    // 2. Create all indexes (IF NOT EXISTS)
+    const indexes = [
+      { name: "idx_paper_analyses_v3_paper_id", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_paper_id ON paper_analyses_v3(paper_id)` },
+      { name: "idx_paper_analyses_v3_practical_value", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_practical_value ON paper_analyses_v3(practical_value_total)` },
+      { name: "idx_paper_analyses_v3_readiness", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_readiness ON paper_analyses_v3(readiness_level)` },
+      { name: "idx_paper_analyses_v3_time_to_value", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_time_to_value ON paper_analyses_v3(time_to_value)` },
+      { name: "idx_paper_analyses_v3_what_kind", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_what_kind ON paper_analyses_v3(what_kind)` },
+      { name: "idx_paper_analyses_v3_impact_tags (GIN)", sql: sql`CREATE INDEX IF NOT EXISTS idx_paper_analyses_v3_impact_tags ON paper_analyses_v3 USING GIN (impact_area_tags)` },
+      { name: "idx_papers_published_at", sql: sql`CREATE INDEX IF NOT EXISTS idx_papers_published_at ON papers(published_at DESC)` },
+    ];
 
-    return NextResponse.json({ message: "Table paper_analyses_v3 created successfully", created: true });
+    for (const idx of indexes) {
+      await db.execute(idx.sql);
+      results.push(`Index ${idx.name}: ensured`);
+    }
+
+    return NextResponse.json({ message: "Migration complete", results });
   } catch (error) {
     console.error("[Migration] Error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Migration failed" },
+      { error: error instanceof Error ? error.message : "Migration failed", results },
       { status: 500 }
     );
   }
