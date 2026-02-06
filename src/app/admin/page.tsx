@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminToken, adminFetch } from "@/lib/admin/use-admin-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -345,12 +345,13 @@ export default function AdminDashboardPage() {
                     </Badge>
                   </div>
                 )}
-                <Button variant="outline" size="sm" asChild className="w-full">
-                  <Link href="/admin/analysis-v3">
-                    Manage Analysis v3
-                    <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
+                <Link
+                  href="/admin/analysis-v3"
+                  className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
+                >
+                  Manage Analysis v3
+                  <ArrowRight className="size-4" />
+                </Link>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -479,24 +480,27 @@ export default function AdminDashboardPage() {
       <div>
         <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" asChild>
-            <Link href="/admin/analysis-v3">
-              Analysis v3
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/admin/queues">
-              View Queues
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/admin/ingestion">
-              Ingestion
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
+          <Link
+            href="/admin/analysis-v3"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Analysis v3
+            <ArrowRight className="size-4" />
+          </Link>
+          <Link
+            href="/admin/queues"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            View Queues
+            <ArrowRight className="size-4" />
+          </Link>
+          <Link
+            href="/admin/ingestion"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Ingestion
+            <ArrowRight className="size-4" />
+          </Link>
         </div>
       </div>
     </div>
