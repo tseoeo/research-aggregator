@@ -17,7 +17,7 @@ import {
   createAnalysisV3Worker,
   createBackfillWorker,
 } from "../lib/queue/workers";
-import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue } from "../lib/queue/queues";
+import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue, analysisV3Queue } from "../lib/queue/queues";
 import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
 import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
@@ -440,6 +440,10 @@ async function startWorkers() {
   // Controlled by its own auto_enabled + budget system.
   const v3Worker = createAnalysisV3Worker();
   workers.push(v3Worker);
+
+  // Ensure the v3 queue is never paused (clears any stale pause state from Redis)
+  await analysisV3Queue.resume();
+  console.log("[Main] [V3] Analysis v3 queue resumed (always active)");
 
   // Check runtime toggle to decide initial AI state
   // If env var explicitly says false, force Redis to match (env override for emergency stop)
