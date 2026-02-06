@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Check if AI is enabled (runtime toggle)
-  if (!(await isAiEnabledAsync())) {
+  if (!(await isAiEnabledAsync(true))) {
     const status = await getAiStatusAsync();
     return NextResponse.json(
       {

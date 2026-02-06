@@ -264,7 +264,7 @@ export default function AdminIngestionPage() {
                   Total Papers
                 </p>
                 <p className="text-2xl font-bold">
-                  {stats.totalPapers.toLocaleString()}
+                  {(stats.totalPapers ?? 0).toLocaleString()}
                 </p>
               </div>
               <div className="space-y-1">
@@ -273,7 +273,7 @@ export default function AdminIngestionPage() {
                   Avg / Day
                 </p>
                 <p className="text-2xl font-bold">
-                  {stats.avgPapersPerDay.toLocaleString()}
+                  {(stats.avgPapersPerDay ?? 0).toLocaleString()}
                 </p>
               </div>
               <div className="space-y-1">
@@ -282,7 +282,7 @@ export default function AdminIngestionPage() {
                   Today
                 </p>
                 <p className="text-2xl font-bold">
-                  {stats.todayIngested.toLocaleString()}
+                  {(stats.todayIngested ?? 0).toLocaleString()}
                 </p>
               </div>
             </div>

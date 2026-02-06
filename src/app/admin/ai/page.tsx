@@ -84,8 +84,8 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-function formatNumber(n: number): string {
-  return n.toLocaleString();
+function formatNumber(n: number | undefined | null): string {
+  return (n ?? 0).toLocaleString();
 }
 
 // ---------------------------------------------------------------------------

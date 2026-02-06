@@ -205,7 +205,7 @@ export default function AdminDashboardPage() {
               <Skeleton className="h-8 w-24" />
             ) : (
               <p className="text-2xl font-bold">
-                {statusQuery.data?.totalPapers.toLocaleString() ?? "--"}
+                {statusQuery.data?.totalPapers?.toLocaleString() ?? "--"}
               </p>
             )}
           </CardContent>
@@ -224,7 +224,7 @@ export default function AdminDashboardPage() {
               <Skeleton className="h-8 w-16" />
             ) : (
               <p className="text-2xl font-bold">
-                {paperStatsQuery.data?.todayIngested.toLocaleString() ?? "--"}
+                {paperStatsQuery.data?.todayIngested?.toLocaleString() ?? "--"}
               </p>
             )}
           </CardContent>
@@ -267,7 +267,7 @@ export default function AdminDashboardPage() {
               <Skeleton className="h-8 w-20" />
             ) : (
               <p className="text-2xl font-bold">
-                {triggerAiQuery.data?.totalNeedingAI.toLocaleString() ?? "--"}
+                {triggerAiQuery.data?.totalNeedingAI?.toLocaleString() ?? "--"}
               </p>
             )}
           </CardContent>

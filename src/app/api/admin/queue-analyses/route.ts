@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
     return auth.error;
   }
 
-  // Check if AI is enabled (runtime toggle)
-  if (!(await isAiEnabledAsync())) {
+  // Check if AI is enabled (runtime toggle) — skip cache to get fresh Redis value
+  if (!(await isAiEnabledAsync(true))) {
     const status = await getAiStatusAsync();
     return NextResponse.json(
       {
