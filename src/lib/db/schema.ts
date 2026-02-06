@@ -71,6 +71,10 @@ export const papersRelations = relations(papers, ({ one, many }) => ({
     fields: [papers.id],
     references: [paperCardAnalyses.paperId],
   }),
+  analysisV3: one(paperAnalysesV3, {
+    fields: [papers.id],
+    references: [paperAnalysesV3.paperId],
+  }),
 }));
 
 // ============================================
@@ -518,6 +522,69 @@ export const paperUseCaseMappingsRelations = relations(paperUseCaseMappings, ({ 
 }));
 
 // ============================================
+// PAPER ANALYSES V3
+// ============================================
+
+export const paperAnalysesV3 = pgTable(
+  "paper_analyses_v3",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    paperId: uuid("paper_id")
+      .notNull()
+      .references(() => papers.id, { onDelete: "cascade" }),
+
+    // Field 1: Hook Sentence
+    hookSentence: text("hook_sentence").notNull(),
+
+    // Field 2: What Kind of Thing
+    whatKind: varchar("what_kind", { length: 50 }).notNull(),
+
+    // Field 3: Time-to-Value
+    timeToValue: varchar("time_to_value", { length: 20 }).notNull(),
+
+    // Field 4: Impact Area Tags (JSONB array of strings)
+    impactAreaTags: jsonb("impact_area_tags").notNull().default([]),
+
+    // Field 5: Practical Value Score
+    practicalValueScore: jsonb("practical_value_score").notNull(), // { real_problem, concrete_result, actually_usable, total }
+    practicalValueTotal: integer("practical_value_total").notNull(),
+
+    // Field 6: Key Numbers (JSONB array of objects)
+    keyNumbers: jsonb("key_numbers").notNull().default([]),
+
+    // Field 7: Readiness Level
+    readinessLevel: varchar("readiness_level", { length: 30 }).notNull(),
+
+    // Field 8: How This Changes Things (JSONB array of strings)
+    howThisChangesThings: jsonb("how_this_changes_things").notNull().default([]),
+
+    // Field 9: What Came Before
+    whatCameBefore: text("what_came_before").notNull(),
+
+    // Field 10 (Who's Behind This) comes from paper.authors, not stored here
+
+    // Metadata
+    analysisVersion: varchar("analysis_version", { length: 20 }).notNull().default("v3"),
+    analysisStatus: varchar("analysis_status", { length: 20 }).notNull().default("complete"),
+    analysisModel: varchar("analysis_model", { length: 100 }),
+    tokensUsed: integer("tokens_used"),
+    promptHash: varchar("prompt_hash", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    unique("paper_analyses_v3_paper_version").on(table.paperId, table.analysisVersion),
+  ]
+);
+
+export const paperAnalysesV3Relations = relations(paperAnalysesV3, ({ one }) => ({
+  paper: one(papers, {
+    fields: [paperAnalysesV3.paperId],
+    references: [papers.id],
+  }),
+}));
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 
@@ -536,6 +603,10 @@ export type PaperCardAnalysis = typeof paperCardAnalyses.$inferSelect;
 export type NewPaperCardAnalysis = typeof paperCardAnalyses.$inferInsert;
 export type PaperUseCaseMapping = typeof paperUseCaseMappings.$inferSelect;
 export type NewPaperUseCaseMapping = typeof paperUseCaseMappings.$inferInsert;
+
+// V3 Analysis Types
+export type PaperAnalysisV3 = typeof paperAnalysesV3.$inferSelect;
+export type NewPaperAnalysisV3 = typeof paperAnalysesV3.$inferInsert;
 
 // Ingestion Ledger Types
 export type IngestionRun = typeof ingestionRuns.$inferSelect;

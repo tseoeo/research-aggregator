@@ -14,9 +14,10 @@ import {
   createSocialMonitorWorker,
   createNewsWorker,
   createAnalysisWorker,
+  createAnalysisV3Worker,
   createBackfillWorker,
 } from "../lib/queue/workers";
-import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue } from "../lib/queue/queues";
+import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue, analysisV3Queue } from "../lib/queue/queues";
 import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
 import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
@@ -29,6 +30,7 @@ const workers: Worker[] = [];
 // AI workers are tracked separately for dynamic pause/resume
 let summaryWorker: Worker | null = null;
 let analysisWorker: Worker | null = null;
+let analysisV3Worker: Worker | null = null;
 
 /**
  * Get yesterday's date as ISO string (YYYY-MM-DD)
@@ -399,15 +401,19 @@ async function setAiWorkersState(enabled: boolean) {
     console.log("[Main] [AI] Resuming AI workers and queues...");
     if (summaryWorker) await summaryWorker.resume();
     if (analysisWorker) await analysisWorker.resume();
+    if (analysisV3Worker) await analysisV3Worker.resume();
     await summaryQueue.resume();
     await analysisQueue.resume();
+    await analysisV3Queue.resume();
     console.log("[Main] [AI] AI workers and queues RESUMED");
   } else {
     console.log("[Main] [AI] Pausing AI workers and queues...");
     if (summaryWorker) await summaryWorker.pause();
     if (analysisWorker) await analysisWorker.pause();
+    if (analysisV3Worker) await analysisV3Worker.pause();
     await summaryQueue.pause();
     await analysisQueue.pause();
+    await analysisV3Queue.pause();
     console.log("[Main] [AI] AI workers and queues PAUSED");
   }
 }
@@ -429,8 +435,10 @@ async function startWorkers() {
   // Always create AI workers — control via pause/resume
   summaryWorker = createSummaryWorker();
   analysisWorker = createAnalysisWorker();
+  analysisV3Worker = createAnalysisV3Worker();
   workers.push(summaryWorker);
   workers.push(analysisWorker);
+  workers.push(analysisV3Worker);
 
   // Check runtime toggle to decide initial AI state
   // If env var explicitly says false, force Redis to match (env override for emergency stop)
