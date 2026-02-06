@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { analysisBatchJobs, papers } from "@/lib/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { verifyAdminAuth } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +25,11 @@ export async function GET(request: NextRequest) {
         processingTimeMs: analysisBatchJobs.processingTimeMs,
         errorMessage: analysisBatchJobs.errorMessage,
         completedAt: analysisBatchJobs.completedAt,
+        createdAt: analysisBatchJobs.createdAt,
       })
       .from(analysisBatchJobs)
       .where(inArray(analysisBatchJobs.status, ["completed", "failed"]))
-      .orderBy(desc(analysisBatchJobs.completedAt))
+      .orderBy(desc(sql`COALESCE(${analysisBatchJobs.completedAt}, ${analysisBatchJobs.createdAt})`))
       .limit(limit);
 
     // Batch fetch paper titles
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
         processingTimeMs: j.processingTimeMs,
         processingTimeSeconds: j.processingTimeMs ? (j.processingTimeMs / 1000).toFixed(1) : null,
         errorMessage: j.errorMessage,
-        completedAt: j.completedAt?.toISOString() || null,
+        completedAt: (j.completedAt ?? j.createdAt)?.toISOString() || null,
       })),
     });
   } catch (error) {

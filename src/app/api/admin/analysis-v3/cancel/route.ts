@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     // Mark pending jobs as cancelled
     await db
       .update(analysisBatchJobs)
-      .set({ status: "failed", errorMessage: "Batch cancelled" })
+      .set({ status: "failed", errorMessage: "Batch cancelled", completedAt: new Date() })
       .where(and(
         eq(analysisBatchJobs.batchId, batch.id),
         eq(analysisBatchJobs.status, "pending")
