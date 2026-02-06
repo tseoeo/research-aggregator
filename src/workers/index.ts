@@ -17,7 +17,7 @@ import {
   createAnalysisV3Worker,
   createBackfillWorker,
 } from "../lib/queue/workers";
-import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue, analysisV3Queue } from "../lib/queue/queues";
+import { arxivFetchQueue, socialMonitorQueue, newsFetchQueue, summaryQueue, analysisQueue } from "../lib/queue/queues";
 import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
 import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
@@ -27,10 +27,10 @@ import { getAiEnabledRuntime, setAiEnabledRuntime, subscribeToConfigUpdates } fr
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
 
-// AI workers are tracked separately for dynamic pause/resume
+// Old AI workers are tracked separately for dynamic pause/resume
+// Note: v3 analysis worker is NOT included here — it has its own control plane
 let summaryWorker: Worker | null = null;
 let analysisWorker: Worker | null = null;
-let analysisV3Worker: Worker | null = null;
 
 /**
  * Get yesterday's date as ISO string (YYYY-MM-DD)
@@ -397,24 +397,22 @@ async function backfillMissingDates() {
  * Set AI workers and queues to paused or resumed state
  */
 async function setAiWorkersState(enabled: boolean) {
+  // Note: Only controls old summary + DTL-P workers.
+  // V3 analysis has its own independent control plane (auto_enabled + budget).
   if (enabled) {
-    console.log("[Main] [AI] Resuming AI workers and queues...");
+    console.log("[Main] [AI] Resuming old AI workers and queues...");
     if (summaryWorker) await summaryWorker.resume();
     if (analysisWorker) await analysisWorker.resume();
-    if (analysisV3Worker) await analysisV3Worker.resume();
     await summaryQueue.resume();
     await analysisQueue.resume();
-    await analysisV3Queue.resume();
-    console.log("[Main] [AI] AI workers and queues RESUMED");
+    console.log("[Main] [AI] Old AI workers and queues RESUMED");
   } else {
-    console.log("[Main] [AI] Pausing AI workers and queues...");
+    console.log("[Main] [AI] Pausing old AI workers and queues...");
     if (summaryWorker) await summaryWorker.pause();
     if (analysisWorker) await analysisWorker.pause();
-    if (analysisV3Worker) await analysisV3Worker.pause();
     await summaryQueue.pause();
     await analysisQueue.pause();
-    await analysisV3Queue.pause();
-    console.log("[Main] [AI] AI workers and queues PAUSED");
+    console.log("[Main] [AI] Old AI workers and queues PAUSED");
   }
 }
 
@@ -432,13 +430,16 @@ async function startWorkers() {
   workers.push(createNewsWorker());
   workers.push(createBackfillWorker());
 
-  // Always create AI workers — control via pause/resume
+  // Always create old AI workers — control via pause/resume (gated by AI_ENABLED toggle)
   summaryWorker = createSummaryWorker();
   analysisWorker = createAnalysisWorker();
-  analysisV3Worker = createAnalysisV3Worker();
   workers.push(summaryWorker);
   workers.push(analysisWorker);
-  workers.push(analysisV3Worker);
+
+  // V3 analysis worker — always active, independent of old AI toggle.
+  // Controlled by its own auto_enabled + budget system.
+  const v3Worker = createAnalysisV3Worker();
+  workers.push(v3Worker);
 
   // Check runtime toggle to decide initial AI state
   // If env var explicitly says false, force Redis to match (env override for emergency stop)

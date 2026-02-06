@@ -11,8 +11,6 @@ import { PaperAnalysisV3Service } from "../../services/paper-analysis-v3";
 import { db } from "../../db";
 import { paperAnalysesV3, papers, paperAuthors, authors } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { getAiEnabledRuntime } from "../../ai/runtime-toggle";
-
 const ANALYSIS_VERSION = "v3";
 
 export interface AnalysisV3JobData {
@@ -42,13 +40,6 @@ export interface AnalysisV3JobResult {
  */
 async function processAnalysisV3Job(job: Job<AnalysisV3JobData>): Promise<AnalysisV3JobResult> {
   const { paperId, title, abstract, authors: authorNames, publishedDate, categories, force = false, model: requestedModel } = job.data;
-
-  // Per-job AI runtime check (defense in depth)
-  const aiEnabled = await getAiEnabledRuntime(true);
-  if (!aiEnabled) {
-    console.log(`[AnalysisV3 Worker] AI disabled at runtime, skipping paper ${paperId}`);
-    throw new Error("AI processing disabled at runtime");
-  }
 
   console.log(`[AnalysisV3 Worker] Processing paper: ${paperId}${requestedModel ? ` with model: ${requestedModel}` : ""}`);
 
