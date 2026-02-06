@@ -81,7 +81,7 @@ export function PaperCard({ paper }: PaperCardProps) {
         </div>
 
         {/* Title */}
-        <Link href={`/papers/${paper.id}`} className="block group/title">
+        <Link href={`/papers/${paper.externalId}`} className="block group/title">
           <h3 className="heading-display text-lg sm:text-xl leading-snug text-foreground group-hover/title:text-primary transition-colors duration-200">
             {paper.title}
           </h3>
