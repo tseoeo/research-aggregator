@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { papers, paperAnalysesV3, analysisBatches, analysisBatchJobs } from "@/lib/db/schema";
-import { sql, eq, notInArray } from "drizzle-orm";
+import { papers, paperAnalysesV3, analysisBatches, analysisBatchJobs, paperAuthors, authors } from "@/lib/db/schema";
+import { sql, eq, notInArray, inArray } from "drizzle-orm";
 import { verifyAdminAuth } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
@@ -29,13 +29,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find papers without v3 analysis
+    // Find papers without v3 analysis (include full data for job payloads)
     const analyzedPaperIds = db
       .select({ paperId: paperAnalysesV3.paperId })
       .from(paperAnalysesV3);
 
     const unanalyzed = await db
-      .select({ id: papers.id })
+      .select({
+        id: papers.id,
+        title: papers.title,
+        abstract: papers.abstract,
+        publishedAt: papers.publishedAt,
+        categories: papers.categories,
+      })
       .from(papers)
       .where(notInArray(papers.id, analyzedPaperIds))
       .orderBy(sql`${papers.publishedAt} DESC NULLS LAST`)
@@ -43,6 +49,23 @@ export async function POST(request: NextRequest) {
 
     if (unanalyzed.length === 0) {
       return NextResponse.json({ message: "No papers need analysis", batchSize: 0 });
+    }
+
+    // Fetch authors for all papers in bulk
+    const paperIds = unanalyzed.map((p) => p.id);
+    const authorRows = await db
+      .select({
+        paperId: paperAuthors.paperId,
+        name: authors.name,
+      })
+      .from(paperAuthors)
+      .innerJoin(authors, eq(paperAuthors.authorId, authors.id))
+      .where(inArray(paperAuthors.paperId, paperIds));
+
+    const authorsByPaper = new Map<string, string[]>();
+    for (const row of authorRows) {
+      if (!authorsByPaper.has(row.paperId)) authorsByPaper.set(row.paperId, []);
+      authorsByPaper.get(row.paperId)!.push(row.name);
     }
 
     // Create batch
@@ -67,12 +90,20 @@ export async function POST(request: NextRequest) {
 
     await db.insert(analysisBatchJobs).values(jobValues);
 
-    // Enqueue jobs to BullMQ analysis-v3 queue
+    // Enqueue jobs to BullMQ with full paper data
     const { analysisV3Queue } = await import("@/lib/queue/queues");
     for (const p of unanalyzed) {
       await analysisV3Queue.add(
         "analyze-v3",
-        { paperId: p.id, batchId },
+        {
+          paperId: p.id,
+          batchId,
+          title: p.title,
+          abstract: p.abstract || "",
+          authors: authorsByPaper.get(p.id) || [],
+          publishedDate: p.publishedAt?.toISOString().split("T")[0],
+          categories: p.categories || [],
+        },
         {
           jobId: `v3-batch-${batchId}-${p.id}`,
           removeOnComplete: 100,
