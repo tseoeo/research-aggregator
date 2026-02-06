@@ -238,37 +238,65 @@ export class PaperAnalysisV3Service {
 
     // First attempt
     const result = await this.callOpenRouter(userPrompt);
-    const parsed = this.parseResponse(result.content);
-    const validation = v3AnalysisSchema.safeParse(parsed);
 
-    if (validation.success) {
-      // Verify total matches sum
-      const score = validation.data.practical_value_score;
-      const expectedTotal = score.real_problem + score.concrete_result + score.actually_usable;
-      if (score.total !== expectedTotal) {
-        // Fix the total silently
-        validation.data.practical_value_score.total = expectedTotal;
+    // If response was truncated, skip parsing and go straight to retry
+    let parsed: unknown = null;
+    let validation: ReturnType<typeof v3AnalysisSchema.safeParse> | null = null;
+    let truncated = result.finishReason === "length";
+
+    if (!truncated) {
+      parsed = this.parseResponse(result.content);
+      validation = v3AnalysisSchema.safeParse(parsed);
+
+      if (validation.success) {
+        // Verify total matches sum
+        const score = validation.data.practical_value_score;
+        const expectedTotal = score.real_problem + score.concrete_result + score.actually_usable;
+        if (score.total !== expectedTotal) {
+          validation.data.practical_value_score.total = expectedTotal;
+        }
+
+        return {
+          analysis: validation.data,
+          tokensUsed: result.tokensUsed,
+          model: result.model,
+          promptHash,
+          analysisStatus: "complete",
+          validationErrors: [],
+        };
       }
-
-      return {
-        analysis: validation.data,
-        tokensUsed: result.tokensUsed,
-        model: result.model,
-        promptHash,
-        analysisStatus: "complete",
-        validationErrors: [],
-      };
     }
 
-    // Validation failed — retry once with error feedback
-    console.warn("[AnalysisV3] First attempt validation failed, retrying with feedback");
-    const errorFeedback = validation.error.issues
-      .map((e) => `${e.path.join(".")}: ${e.message}`)
-      .join("; ");
+    // Retry with error feedback
+    let errorFeedback: string;
+    if (truncated) {
+      console.warn("[AnalysisV3] First attempt truncated (finish_reason: length), retrying with shorter output guidance");
+      errorFeedback = "Your previous response was truncated because it exceeded the token limit. Be more concise: shorter strings, fewer key_numbers (max 2), shorter how_this_changes_things entries (max 80 chars each), shorter what_came_before (max 100 chars). Respond with valid JSON only — no markdown fences, no preamble.";
+    } else {
+      console.warn("[AnalysisV3] First attempt validation failed, retrying with feedback");
+      errorFeedback = `Your previous response had validation errors: ${
+        validation && !validation.success
+          ? validation.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ")
+          : "Invalid JSON structure"
+      }`;
+    }
 
-    const retryPrompt = `${userPrompt}\n\nYour previous response had validation errors: ${errorFeedback}\n\nPlease fix these issues and respond with valid JSON only.`;
+    const retryPrompt = `${userPrompt}\n\n${errorFeedback}\n\nPlease fix these issues and respond with valid JSON only.`;
     const retryResult = await this.callOpenRouter(retryPrompt);
-    const retryParsed = this.parseResponse(retryResult.content);
+
+    // If retry is also truncated, try to salvage what we can
+    const retryTruncated = retryResult.finishReason === "length";
+    let retryParsed: unknown;
+    try {
+      retryParsed = this.parseResponse(retryResult.content);
+    } catch {
+      if (retryTruncated) {
+        console.error("[AnalysisV3] Retry also truncated and unparseable, attempting JSON repair");
+        retryParsed = this.repairTruncatedJson(retryResult.content);
+      } else {
+        throw new Error(`Failed to parse retry response as JSON: ${retryResult.content.substring(0, 500)}`);
+      }
+    }
     const retryValidation = v3AnalysisSchema.safeParse(retryParsed);
 
     if (retryValidation.success) {
@@ -291,10 +319,16 @@ export class PaperAnalysisV3Service {
     // Both attempts failed — store partial result with whatever fields passed
     console.error("[AnalysisV3] Retry also failed, storing partial result");
     const partialAnalysis = this.buildPartialAnalysis(retryParsed);
-    const allErrors = [
-      ...validation.error.issues.map((e) => `attempt1: ${e.path.join(".")}: ${e.message}`),
-      ...retryValidation.error.issues.map((e) => `attempt2: ${e.path.join(".")}: ${e.message}`),
-    ];
+    const allErrors: string[] = [];
+    if (truncated) {
+      allErrors.push("attempt1: response truncated (finish_reason: length)");
+    } else if (validation && !validation.success) {
+      allErrors.push(...validation.error.issues.map((e) => `attempt1: ${e.path.join(".")}: ${e.message}`));
+    }
+    if (retryTruncated) {
+      allErrors.push("attempt2: response truncated (finish_reason: length)");
+    }
+    allErrors.push(...retryValidation.error.issues.map((e) => `attempt2: ${e.path.join(".")}: ${e.message}`));
 
     return {
       analysis: partialAnalysis,
@@ -313,6 +347,7 @@ export class PaperAnalysisV3Service {
     content: string;
     tokensUsed: number;
     model: string;
+    finishReason: string;
   }> {
     const requestBody: Record<string, unknown> = {
       model: this.model,
@@ -321,7 +356,7 @@ export class PaperAnalysisV3Service {
         { role: "user", content: userPrompt },
       ],
       temperature: 0,
-      max_tokens: 4000,
+      max_tokens: 10000,
     };
 
     if (supportsJsonMode(this.model)) {
@@ -348,19 +383,26 @@ export class PaperAnalysisV3Service {
 
     const data: OpenRouterResponse = await response.json();
     const content = data.choices[0]?.message?.content;
+    const finishReason = data.choices[0]?.finish_reason || "unknown";
 
     if (!content) {
-      throw new Error("No content in OpenRouter response");
+      const reason = finishReason === "length"
+        ? "Response truncated — model hit token limit (reasoning tokens may have consumed the budget)"
+        : `No content in OpenRouter response (finish_reason: ${finishReason})`;
+      throw new Error(reason);
     }
 
     console.log(
-      `[AnalysisV3] [AI-CALL] Tokens: ${data.usage?.total_tokens || "unknown"} (prompt: ${data.usage?.prompt_tokens || "?"}, completion: ${data.usage?.completion_tokens || "?"})`
+      `[AnalysisV3] [AI-CALL] Tokens: ${data.usage?.total_tokens || "unknown"} ` +
+      `(prompt: ${data.usage?.prompt_tokens || "?"}, completion: ${data.usage?.completion_tokens || "?"}) ` +
+      `finish_reason: ${finishReason}`
     );
 
     return {
       content,
       tokensUsed: data.usage?.total_tokens || 0,
       model: data.model || this.model,
+      finishReason,
     };
   }
 
@@ -415,5 +457,45 @@ export class PaperAnalysisV3Service {
         .slice(0, 3) || ["Impact analysis incomplete — further review needed for practical implications."],
       what_came_before: safeString(data.what_came_before, "Prior work context unavailable."),
     };
+  }
+
+  /**
+   * Attempt to repair truncated JSON by closing open brackets/braces
+   * Returns a best-effort parsed object, or an empty object if repair fails
+   */
+  private repairTruncatedJson(content: string): unknown {
+    let cleaned = stripMarkdownCodeBlocks(content).trim();
+
+    // Try to close the JSON by counting brackets
+    let braces = 0;
+    let brackets = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (const ch of cleaned) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === "{") braces++;
+      if (ch === "}") braces--;
+      if (ch === "[") brackets++;
+      if (ch === "]") brackets--;
+    }
+
+    // If we're inside a string, close it
+    if (inString) cleaned += '"';
+
+    // Close any open brackets/braces
+    while (brackets > 0) { cleaned += "]"; brackets--; }
+    while (braces > 0) { cleaned += "}"; braces--; }
+
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      // Last resort: try to find the last valid JSON substring
+      console.error("[AnalysisV3] JSON repair failed, returning empty object");
+      return {};
+    }
   }
 }
