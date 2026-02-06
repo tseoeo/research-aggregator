@@ -41,9 +41,9 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AdminAuthContext value={{ token, setToken, isAuthenticated: true }}>
+    <AdminAuthContext.Provider value={{ token, setToken, isAuthenticated: true }}>
       {children}
-    </AdminAuthContext>
+    </AdminAuthContext.Provider>
   );
 }
 
