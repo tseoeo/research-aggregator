@@ -57,6 +57,7 @@ const keyNumberSchema = z.object({
   direction: z.enum(["up", "down"]),
   baseline: z.string().nullable(),
   conditions: z.string(),
+  source: z.string().optional(),
 });
 
 const practicalValueScoreSchema = z.object({
@@ -137,7 +138,7 @@ Produce a JSON response with exactly these fields:
    - actually_usable: 0, 1, or 2 (0=unrealistic resources, 1=feasible for big teams only, 2=realistic for typical startup)
    - total: sum of above (0-6)
 
-6. key_numbers: Array of up to 3, each with: metric (string), value (string), direction ("up" or "down"), baseline (string or null), conditions (string). Selection priority: first 3 sentences > relative improvements > has conditions > cost/efficiency numbers.
+6. key_numbers: Array of up to 3, each with: metric (string), value (string), direction ("up" or "down"), baseline (string or null), conditions (string), source (string — quote or paraphrase the specific claim from the abstract this number comes from, max 15 words). Selection priority: first 3 sentences > relative improvements > has conditions > cost/efficiency numbers.
 
 7. readiness_level: Exactly one of: "Research Only", "Needs Engineering", "Ready to Try"
 

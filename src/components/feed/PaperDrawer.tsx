@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { type FeedPaper } from "./PaperHeadline";
+import {
+  type FeedPaper,
+  WHAT_KIND_TOOLTIPS,
+  IMPACT_AREA_TOOLTIPS,
+  TIME_TOOLTIPS,
+  READINESS_TOOLTIPS,
+} from "./PaperHeadline";
 import {
   Tooltip,
   TooltipTrigger,
@@ -154,9 +160,16 @@ function DrawerContent({
       {/* Badges row: What Kind + Impact Area Tags */}
       <div className="flex flex-wrap items-center gap-1.5">
         {hasAnalysis && paper.analysis!.whatKind && (
-          <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-            {paper.analysis!.whatKind}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-blue-500/10 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400 border border-blue-500/20">
+                {paper.analysis!.whatKind}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[250px]">
+              <p>{WHAT_KIND_TOOLTIPS[paper.analysis!.whatKind] || paper.analysis!.whatKind}</p>
+            </TooltipContent>
+          </Tooltip>
         )}
         {hasAnalysis &&
           paper.analysis!.impactAreaTags.map((tag) => (
@@ -166,8 +179,8 @@ function DrawerContent({
                   {tag}
                 </span>
               </TooltipTrigger>
-              <TooltipContent>
-                <p>{tag}</p>
+              <TooltipContent side="top" className="max-w-[250px]">
+                <p>{IMPACT_AREA_TOOLTIPS[tag] || tag}</p>
               </TooltipContent>
             </Tooltip>
           ))}
@@ -226,13 +239,20 @@ function DrawerContent({
       {/* Key Numbers */}
       {hasAnalysis && paper.analysis!.keyNumbers && paper.analysis!.keyNumbers.length > 0 && (
         <DrawerSection title="Key Numbers">
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {paper.analysis!.keyNumbers.map((kn, i) => (
-              <li key={i} className="text-sm">
-                <span className="font-medium text-foreground">{kn.metric}:</span>{" "}
-                <span className="text-foreground">{kn.value}</span>
-                {kn.context && (
-                  <span className="text-muted-foreground"> ({kn.context})</span>
+              <li key={i}>
+                <div className="text-sm">
+                  <span className="font-medium text-foreground">{kn.metric}:</span>{" "}
+                  <span className="text-foreground">{kn.value}</span>
+                  {kn.baseline && (
+                    <span className="text-muted-foreground"> vs {kn.baseline}</span>
+                  )}
+                </div>
+                {kn.source && (
+                  <p className="text-xs text-muted-foreground mt-0.5 pl-1">
+                    <span className="text-muted-foreground/60">↳</span> {kn.source}
+                  </p>
                 )}
               </li>
             ))}
@@ -245,10 +265,11 @@ function DrawerContent({
         paper.analysis!.howThisChangesThings &&
         paper.analysis!.howThisChangesThings.length > 0 && (
           <DrawerSection title="How This Changes Things">
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {paper.analysis!.howThisChangesThings.map((item, i) => (
-                <li key={i} className="text-sm text-foreground leading-relaxed">
-                  {item}
+                <li key={i} className="flex gap-2 text-sm text-foreground leading-relaxed">
+                  <span className="text-amber-500 shrink-0 mt-0.5" aria-hidden="true">•</span>
+                  <span>{item}</span>
                 </li>
               ))}
             </ul>
@@ -367,19 +388,20 @@ function ValueDotsLarge({
 }) {
   const filled = Math.min(6, Math.max(0, total));
 
-  let tooltipText = `Value: ${total}/6`;
+  const lines: string[] = [`Practical Value: ${total}/6`];
   if (score && typeof score === "object") {
-    const parts: string[] = [];
-    if ("novelty" in score) parts.push(`Novelty: ${score.novelty}/2`);
-    if ("applicability" in score) parts.push(`Applicability: ${score.applicability}/2`);
-    if ("clarity" in score) parts.push(`Clarity: ${score.clarity}/2`);
-    if (parts.length > 0) tooltipText = parts.join(" \u00b7 ");
+    const rp = score.real_problem ?? score.realProblem;
+    const cr = score.concrete_result ?? score.concreteResult;
+    const au = score.actually_usable ?? score.actuallyUsable;
+    if (rp != null) lines.push(`Real problem? ${rp}/2`);
+    if (cr != null) lines.push(`Concrete result? ${cr}/2`);
+    if (au != null) lines.push(`Actually usable? ${au}/2`);
   }
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" aria-label={`Practical value: ${total} out of 6`}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
@@ -392,8 +414,14 @@ function ValueDotsLarge({
           <span className="text-xs text-muted-foreground ml-1">{total}/6</span>
         </div>
       </TooltipTrigger>
-      <TooltipContent>
-        <p>{tooltipText}</p>
+      <TooltipContent side="top" className="max-w-[280px]">
+        <div className="space-y-0.5">
+          {lines.map((line, i) => (
+            <p key={i} className={i === 0 ? "font-medium" : "text-muted-foreground"}>
+              {line}
+            </p>
+          ))}
+        </div>
       </TooltipContent>
     </Tooltip>
   );
@@ -407,14 +435,21 @@ function TimeBadge({ time }: { time: string }) {
   };
 
   return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full",
-        colorMap[time] || "bg-muted text-muted-foreground"
-      )}
-    >
-      {time}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            "inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full",
+            colorMap[time] || "bg-muted text-muted-foreground"
+          )}
+        >
+          {time}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p>{TIME_TOOLTIPS[time] || time}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -437,14 +472,8 @@ function ReadinessBadge({ level }: { level: string }) {
           {level}
         </span>
       </TooltipTrigger>
-      <TooltipContent>
-        <p>
-          {level === "Ready to Try"
-            ? "Can be used or integrated today with minimal effort"
-            : level === "Needs Engineering"
-              ? "Requires significant engineering work before practical use"
-              : "Still in research phase, not ready for production"}
-        </p>
+      <TooltipContent side="top" className="max-w-[250px]">
+        <p>{READINESS_TOOLTIPS[level] || level}</p>
       </TooltipContent>
     </Tooltip>
   );
