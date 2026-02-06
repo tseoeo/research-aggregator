@@ -1,10 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { FilterBar } from "./FilterBar";
 import { PaperHeadline, type FeedPaper } from "./PaperHeadline";
+import { PaperDrawer } from "./PaperDrawer";
 import { Pagination } from "./Pagination";
+import { useKeyboardNavigation } from "./useKeyboardNavigation";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface FeedResponse {
@@ -16,11 +18,13 @@ interface FeedResponse {
 }
 
 function FeedContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<FeedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
+  const [drawerPaperId, setDrawerPaperId] = useState<string | null>(null);
 
   // Fetch data whenever search params change
   useEffect(() => {
@@ -29,7 +33,6 @@ function FeedContent() {
     setError(null);
 
     const params = new URLSearchParams(searchParams.toString());
-    // Set default category if not present
     if (!params.has("category")) {
       params.set("category", "cs.AI");
     }
@@ -57,13 +60,65 @@ function FeedContent() {
     };
   }, [searchParams]);
 
+  // Close drawer when data changes (page/filter change)
+  useEffect(() => {
+    setDrawerPaperId(null);
+    setSelectedPaperId(null);
+  }, [searchParams]);
+
   const handlePaperClick = useCallback((paperId: string) => {
-    setSelectedPaperId((prev) => (prev === paperId ? null : paperId));
+    setSelectedPaperId(paperId);
+    setDrawerPaperId(paperId);
   }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerPaperId(null);
+  }, []);
+
+  const handleOpenDrawer = useCallback((paperId: string) => {
+    setSelectedPaperId(paperId);
+    setDrawerPaperId(paperId);
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    const page = data?.page || 1;
+    const totalPages = data?.totalPages || 1;
+    if (page < totalPages) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", String(page + 1));
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [data, searchParams, router]);
+
+  const handlePrevPage = useCallback(() => {
+    const page = data?.page || 1;
+    if (page > 1) {
+      const params = new URLSearchParams(searchParams.toString());
+      if (page - 1 === 1) {
+        params.delete("page");
+      } else {
+        params.set("page", String(page - 1));
+      }
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [data, searchParams, router]);
+
+  // Keyboard navigation
+  useKeyboardNavigation({
+    papers: data?.papers || [],
+    selectedPaperId,
+    drawerOpen: !!drawerPaperId,
+    onSelectPaper: setSelectedPaperId,
+    onOpenDrawer: handleOpenDrawer,
+    onCloseDrawer: handleCloseDrawer,
+    onNextPage: handleNextPage,
+    onPrevPage: handlePrevPage,
+  });
 
   const page = data?.page || 1;
   const pageSize = data?.pageSize || 20;
   const totalPages = data?.totalPages || 0;
+  const drawerPaper = data?.papers.find((p) => p.id === drawerPaperId) || null;
 
   return (
     <div className="space-y-0">
@@ -116,6 +171,12 @@ function FeedContent() {
           totalPages={totalPages}
         />
       )}
+
+      {/* Detail drawer */}
+      <PaperDrawer
+        paper={drawerPaper}
+        onClose={handleCloseDrawer}
+      />
     </div>
   );
 }
