@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import {
   FileText,
   CalendarPlus,
@@ -16,6 +17,7 @@ import {
   Power,
   ArrowRight,
   AlertTriangle,
+  TrendingUp,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -34,12 +36,6 @@ interface PaperStatsResponse {
   totalPapers: number;
   todayIngested: number;
   avgPapersPerDay: number;
-}
-
-interface TriggerAiResponse {
-  papersWithoutSummaries: number;
-  papersWithoutAnalysis: number;
-  totalNeedingAI: number;
 }
 
 interface AiToggleResponse {
@@ -63,8 +59,27 @@ interface QueueInfo {
   paused: boolean;
 }
 
+interface V3StatusResponse {
+  coverage: { analyzed: number; total: number; percentage: number };
+  budget: {
+    dailyCents: number;
+    monthlyCents: number;
+    todaySpentCents: number;
+    monthSpentCents: number;
+  };
+  autoAnalysis: { enabled: boolean; paused: boolean; pauseReason: string | null };
+  currentBatch: {
+    id: string;
+    batchSize: number;
+    completed: number;
+    failed: number;
+    status: string;
+  } | null;
+  model: string;
+}
+
 /* ------------------------------------------------------------------ */
-/*  Health badge variant helper                                        */
+/*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
 function healthVariant(health: string) {
@@ -78,6 +93,10 @@ function healthVariant(health: string) {
     default:
       return "outline" as const;
   }
+}
+
+function cents(c: number): string {
+  return `$${(c / 100).toFixed(2)}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -113,24 +132,24 @@ export default function AdminDashboardPage() {
     refetchInterval,
   });
 
-  // Fetch AI needing processing count
-  const triggerAiQuery = useQuery<TriggerAiResponse>({
-    queryKey: ["admin", "trigger-ai"],
-    queryFn: async () => {
-      const res = await adminFetch("/api/admin/trigger-ai", token!);
-      if (!res.ok) throw new Error("Failed to fetch AI stats");
-      return res.json();
-    },
-    enabled: !!token,
-    refetchInterval,
-  });
-
   // Fetch AI toggle state
   const aiToggleQuery = useQuery<AiToggleResponse>({
     queryKey: ["admin", "ai-toggle"],
     queryFn: async () => {
       const res = await adminFetch("/api/admin/ai-toggle", token!);
       if (!res.ok) throw new Error("Failed to fetch AI toggle");
+      return res.json();
+    },
+    enabled: !!token,
+    refetchInterval,
+  });
+
+  // Fetch v3 analysis status
+  const v3StatusQuery = useQuery<V3StatusResponse>({
+    queryKey: ["admin", "analysis-v3", "status"],
+    queryFn: async () => {
+      const res = await adminFetch("/api/admin/analysis-v3/status", token!);
+      if (!res.ok) throw new Error("Failed to fetch v3 status");
       return res.json();
     },
     enabled: !!token,
@@ -184,6 +203,8 @@ export default function AdminDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["admin", "ai-toggle"] });
     },
   });
+
+  const v3 = v3StatusQuery.data;
 
   return (
     <div className="space-y-8">
@@ -254,92 +275,152 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Papers needing AI */}
+        {/* v3 Coverage */}
         <Card>
           <CardHeader className="pb-1">
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <BrainCircuit className="size-4" />
-              Needing AI
+              <TrendingUp className="size-4" />
+              v3 Coverage
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {triggerAiQuery.isLoading ? (
+            {v3StatusQuery.isLoading ? (
               <Skeleton className="h-8 w-20" />
+            ) : v3 ? (
+              <>
+                <p className="text-2xl font-bold">{v3.coverage.percentage}%</p>
+                <p className="text-xs text-muted-foreground">
+                  {v3.coverage.analyzed.toLocaleString()} /{" "}
+                  {v3.coverage.total.toLocaleString()}
+                </p>
+              </>
             ) : (
-              <p className="text-2xl font-bold">
-                {triggerAiQuery.data?.totalNeedingAI?.toLocaleString() ?? "--"}
-              </p>
+              <p className="text-2xl font-bold">--</p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* AI Status card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Power className="size-5" />
-            AI Processing
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {aiToggleQuery.isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-5 w-32" />
-            </div>
-          ) : aiToggleQuery.data ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium">
-                    Status:{" "}
-                    <Badge
-                      variant={
-                        aiToggleQuery.data.runtimeEnabled
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {aiToggleQuery.data.runtimeEnabled ? "Active" : "Stopped"}
-                    </Badge>
+      {/* v3 Analysis Status + AI Toggle row */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* v3 Analysis Status card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BrainCircuit className="size-5" />
+              Analysis v3
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {v3StatusQuery.isLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+            ) : v3 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Auto-analysis</span>
+                  <Badge
+                    variant={v3.autoAnalysis.enabled ? "default" : "secondary"}
+                    className={cn(
+                      v3.autoAnalysis.enabled &&
+                        "bg-emerald-500/15 text-emerald-600 border-emerald-500/20"
+                    )}
+                  >
+                    {v3.autoAnalysis.enabled ? "On" : "Off"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Today spent</span>
+                  <span className="font-medium">
+                    {cents(v3.budget.todaySpentCents)} / {cents(v3.budget.dailyCents)}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Model: {aiToggleQuery.data.model}
-                </p>
-                {aiToggleQuery.data.updatedAt && (
-                  <p className="text-xs text-muted-foreground">
-                    Stopped at:{" "}
-                    {new Date(aiToggleQuery.data.updatedAt).toLocaleString()}
-                  </p>
+                {v3.currentBatch && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Active batch</span>
+                    <Badge variant="secondary">
+                      {v3.currentBatch.completed + v3.currentBatch.failed} / {v3.currentBatch.batchSize}
+                    </Badge>
+                  </div>
                 )}
+                <Button variant="outline" size="sm" asChild className="w-full">
+                  <Link href="/admin/analysis-v3">
+                    Manage Analysis v3
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
               </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Unable to load v3 status.
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-              <div className="flex items-center gap-3">
-                <label
-                  htmlFor="ai-toggle"
-                  className="text-sm font-medium select-none"
-                >
-                  {aiToggleQuery.data.runtimeEnabled ? "Enabled" : "Disabled"}
-                </label>
-                <Switch
-                  id="ai-toggle"
-                  checked={aiToggleQuery.data.runtimeEnabled}
-                  onCheckedChange={(checked) =>
-                    aiToggleMutation.mutate(checked)
-                  }
-                  disabled={aiToggleMutation.isPending}
-                />
+        {/* AI Processing Toggle card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Power className="size-5" />
+              AI Processing
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {aiToggleQuery.isLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-5 w-32" />
               </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Unable to load AI status.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            ) : aiToggleQuery.data ? (
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium">
+                      Status:{" "}
+                      <Badge
+                        variant={
+                          aiToggleQuery.data.runtimeEnabled
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {aiToggleQuery.data.runtimeEnabled ? "Active" : "Stopped"}
+                      </Badge>
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Model: {aiToggleQuery.data.model}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label
+                    htmlFor="ai-toggle"
+                    className="text-sm font-medium select-none"
+                  >
+                    {aiToggleQuery.data.runtimeEnabled ? "Enabled" : "Disabled"}
+                  </label>
+                  <Switch
+                    id="ai-toggle"
+                    checked={aiToggleQuery.data.runtimeEnabled}
+                    onCheckedChange={(checked) =>
+                      aiToggleMutation.mutate(checked)
+                    }
+                    disabled={aiToggleMutation.isPending}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Unable to load AI status.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Queue summary */}
       <div>
@@ -399,8 +480,8 @@ export default function AdminDashboardPage() {
         <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" asChild>
-            <Link href="/admin/ai">
-              Manage AI
+            <Link href="/admin/analysis-v3">
+              Analysis v3
               <ArrowRight className="size-4" />
             </Link>
           </Button>

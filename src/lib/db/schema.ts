@@ -585,6 +585,54 @@ export const paperAnalysesV3Relations = relations(paperAnalysesV3, ({ one }) => 
 }));
 
 // ============================================
+// ANALYSIS V3: BATCH TRACKING
+// ============================================
+
+export const analysisBatches = pgTable("analysis_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  batchSize: integer("batch_size").notNull(),
+  completed: integer("completed").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  totalCostCents: integer("total_cost_cents").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  model: varchar("model", { length: 100 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("running"), // running, completed, paused, cancelled
+  scope: varchar("scope", { length: 50 }), // 'newest', 'category:cs.AI', 'all'
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const analysisBatchJobs = pgTable("analysis_batch_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  batchId: uuid("batch_id").references(() => analysisBatches.id),
+  paperId: uuid("paper_id").references(() => papers.id),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, running, completed, failed
+  costCents: integer("cost_cents"),
+  tokensUsed: integer("tokens_used"),
+  processingTimeMs: integer("processing_time_ms"),
+  errorMessage: text("error_message"),
+  rawOutput: text("raw_output"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const analysisBatchesRelations = relations(analysisBatches, ({ many }) => ({
+  jobs: many(analysisBatchJobs),
+}));
+
+export const analysisBatchJobsRelations = relations(analysisBatchJobs, ({ one }) => ({
+  batch: one(analysisBatches, {
+    fields: [analysisBatchJobs.batchId],
+    references: [analysisBatches.id],
+  }),
+  paper: one(papers, {
+    fields: [analysisBatchJobs.paperId],
+    references: [papers.id],
+  }),
+}));
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 
@@ -611,3 +659,9 @@ export type NewPaperAnalysisV3 = typeof paperAnalysesV3.$inferInsert;
 // Ingestion Ledger Types
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 export type NewIngestionRun = typeof ingestionRuns.$inferInsert;
+
+// Analysis Batch Types
+export type AnalysisBatch = typeof analysisBatches.$inferSelect;
+export type NewAnalysisBatch = typeof analysisBatches.$inferInsert;
+export type AnalysisBatchJob = typeof analysisBatchJobs.$inferSelect;
+export type NewAnalysisBatchJob = typeof analysisBatchJobs.$inferInsert;

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  Brain,
+  BrainCircuit,
   ListTodo,
   Database,
   Lock,
@@ -16,7 +16,7 @@ import {
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/ai", label: "AI Processing", icon: Brain },
+  { href: "/admin/analysis-v3", label: "Analysis v3", icon: BrainCircuit },
   { href: "/admin/queues", label: "Queues", icon: ListTodo },
   { href: "/admin/ingestion", label: "Ingestion", icon: Database },
 ];

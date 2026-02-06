@@ -62,6 +62,54 @@ export async function POST(request: NextRequest) {
       results.push(`Index ${idx.name}: ensured`);
     }
 
+    // 3. Create analysis_batches table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS analysis_batches (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        batch_size INTEGER NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        total_cost_cents INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        model VARCHAR(100) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'running',
+        scope VARCHAR(50),
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        finished_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    results.push("Table analysis_batches: ensured");
+
+    // 4. Create analysis_batch_jobs table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS analysis_batch_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        batch_id UUID REFERENCES analysis_batches(id),
+        paper_id UUID REFERENCES papers(id),
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        cost_cents INTEGER,
+        tokens_used INTEGER,
+        processing_time_ms INTEGER,
+        error_message TEXT,
+        raw_output TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ
+      )
+    `);
+    results.push("Table analysis_batch_jobs: ensured");
+
+    // 5. Create batch job indexes
+    const batchIndexes = [
+      { name: "idx_batch_jobs_batch_id", sql: sql`CREATE INDEX IF NOT EXISTS idx_batch_jobs_batch_id ON analysis_batch_jobs(batch_id)` },
+      { name: "idx_batch_jobs_status", sql: sql`CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON analysis_batch_jobs(status)` },
+    ];
+
+    for (const idx of batchIndexes) {
+      await db.execute(idx.sql);
+      results.push(`Index ${idx.name}: ensured`);
+    }
+
     return NextResponse.json({ message: "Migration complete", results });
   } catch (error) {
     console.error("[Migration] Error:", error);
