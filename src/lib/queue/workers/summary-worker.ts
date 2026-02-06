@@ -11,6 +11,7 @@ import { OpenRouterService } from "../../services/openrouter";
 import { db } from "../../db";
 import { papers } from "../../db/schema";
 import { eq } from "drizzle-orm";
+import { getAiEnabledRuntime } from "../../ai/runtime-toggle";
 
 export interface SummaryJobData {
   paperId: string;
@@ -32,6 +33,13 @@ export interface SummaryJobResult {
  */
 async function processSummaryJob(job: Job<SummaryJobData>): Promise<SummaryJobResult> {
   const { paperId, title, abstract, model } = job.data;
+
+  // Safety check: verify AI is still enabled before doing expensive work
+  const aiEnabled = await getAiEnabledRuntime(true);
+  if (!aiEnabled) {
+    console.log(`[Summary Worker] AI disabled at runtime, skipping paper ${paperId}`);
+    throw new Error("AI processing disabled at runtime");
+  }
 
   console.log(`[Summary Worker] Processing paper: ${paperId}${model ? ` with model: ${model}` : ''}`);
 

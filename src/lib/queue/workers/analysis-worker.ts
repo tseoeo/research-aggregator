@@ -15,6 +15,7 @@ import {
   paperUseCaseMappings,
 } from "../../db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { getAiEnabledRuntime } from "../../ai/runtime-toggle";
 
 const ANALYSIS_VERSION = "dtlp_v2"; // Incremented for new schema with core_claim, prompt_hash, etc.
 
@@ -47,6 +48,13 @@ export interface AnalysisJobResult {
  */
 async function processAnalysisJob(job: Job<AnalysisJobData>): Promise<AnalysisJobResult> {
   const { paperId, title, abstract, authors, year, force = false, model: requestedModel } = job.data;
+
+  // Safety check: verify AI is still enabled before doing expensive work
+  const aiEnabled = await getAiEnabledRuntime(true);
+  if (!aiEnabled) {
+    console.log(`[Analysis Worker] AI disabled at runtime, skipping paper ${paperId}`);
+    throw new Error("AI processing disabled at runtime");
+  }
 
   console.log(`[Analysis Worker] Processing paper: ${paperId}${requestedModel ? ` with model: ${requestedModel}` : ''}`);
 

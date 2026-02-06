@@ -21,7 +21,7 @@ import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
 import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
 import { AI_CATEGORIES } from "../lib/services/arxiv";
-import { getAiEnabledRuntime, subscribeToConfigUpdates } from "../lib/ai/runtime-toggle";
+import { getAiEnabledRuntime, setAiEnabledRuntime, subscribeToConfigUpdates } from "../lib/ai/runtime-toggle";
 
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
@@ -433,6 +433,14 @@ async function startWorkers() {
   workers.push(analysisWorker);
 
   // Check runtime toggle to decide initial AI state
+  // If env var explicitly says false, force Redis to match (env override for emergency stop)
+  if (process.env.AI_ENABLED === "false") {
+    const redisState = await getAiEnabledRuntime(true);
+    if (redisState) {
+      console.log("[Main] [AI] AI_ENABLED=false env override — forcing Redis toggle off");
+      await setAiEnabledRuntime(false);
+    }
+  }
   const aiEnabled = await getAiEnabledRuntime(true); // skip cache for fresh read
   console.log(`[Main] [AI] Runtime AI toggle: ${aiEnabled ? "ENABLED" : "DISABLED"}`);
 
