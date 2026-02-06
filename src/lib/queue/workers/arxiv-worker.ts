@@ -19,8 +19,7 @@ import { papers, paperSources, ingestionRuns } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import { socialMonitorQueue, summaryQueue, analysisQueue } from "../queues";
 
-// AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
-const AI_ENABLED = process.env.AI_ENABLED === "true";
+import { getAiEnabledRuntime } from "../../ai/runtime-toggle";
 
 interface ArxivFetchJob {
   category?: string;
@@ -147,7 +146,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
 
   console.log(`[ArxivWorker] Starting fetch for categories: ${categoriesToFetch.join(", ")}`);
   console.log(`[ArxivWorker] Max pages per category: ${maxPagesPerCategory}`);
-  console.log(`[ArxivWorker] AI processing: ${AI_ENABLED ? "ENABLED" : "DISABLED (set AI_ENABLED=true to enable)"}`);
+  const aiEnabled = await getAiEnabledRuntime();
+  console.log(`[ArxivWorker] AI processing: ${aiEnabled ? "ENABLED" : "DISABLED"}`);
 
 
   // Track unique papers across categories (same paper can be in cs.AI and cs.LG)
@@ -230,8 +230,8 @@ async function processArxivFetch(job: Job<ArxivFetchJob>): Promise<FetchResult> 
     );
     socialMonitorQueued++;
 
-    // Queue for AI processing only if enabled
-    if (AI_ENABLED) {
+    // Queue for AI processing only if enabled (runtime check)
+    if (aiEnabled) {
       // Queue for summary generation (staggered - 2s between jobs)
       await summaryQueue.add(
         "generate-summary",
@@ -290,7 +290,8 @@ async function processArxivFetchByDate(job: Job<ArxivFetchByDateJob>): Promise<D
 
   console.log(`[ArxivWorker] Starting date-based fetch for ${dateStr}`);
   console.log(`[ArxivWorker] Categories: ${categories.join(", ")}`);
-  console.log(`[ArxivWorker] AI processing: ${AI_ENABLED ? "ENABLED" : "DISABLED"}`);
+  const aiEnabled = await getAiEnabledRuntime();
+  console.log(`[ArxivWorker] AI processing: ${aiEnabled ? "ENABLED" : "DISABLED"}`);
 
   // Phase E: Acquire Redis lock for multi-replica safety
   const lockKey = `arxiv:fetch-lock:${dateStr}`;
@@ -462,7 +463,7 @@ async function processArxivFetchByDate(job: Job<ArxivFetchByDateJob>): Promise<D
       socialMonitorQueued++;
 
       // Queue for AI processing only if enabled
-      if (AI_ENABLED) {
+      if (aiEnabled) {
         await summaryQueue.add(
           "generate-summary",
           {

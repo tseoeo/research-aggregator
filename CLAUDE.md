@@ -26,7 +26,7 @@
 
 - Next.js 16, React 19, TypeScript, Tailwind CSS 4
 - Drizzle ORM + PostgreSQL, BullMQ + Redis
-- AI: OpenRouter API (Kimi K2 Thinking model), toggled via `AI_ENABLED` env var
+- AI: OpenRouter API (Kimi K2.5 model — `moonshotai/kimi-k2.5`), toggled via `AI_ENABLED` env var
 - Auth: NextAuth v5 (GitHub OAuth)
 
 ## Key Architecture

@@ -5,7 +5,7 @@ import { summaryQueue, socialMonitorQueue, newsFetchQueue } from "@/lib/queue/qu
 import { eq, and } from "drizzle-orm";
 import { AI_CATEGORIES } from "@/lib/services/arxiv";
 import { verifyAdminAuth } from "@/lib/auth/admin";
-import { isAiEnabled, getAiStatusMessage } from "@/lib/ai/config";
+import { isAiEnabledAsync, getAiStatusAsync, getAiStatusMessage } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -133,13 +133,14 @@ export async function POST(request: NextRequest) {
     return auth.error;
   }
 
-  // Check if AI is enabled (needed for summary generation)
-  if (!isAiEnabled()) {
+  // Check if AI is enabled (runtime toggle)
+  if (!(await isAiEnabledAsync())) {
+    const status = await getAiStatusAsync();
     return NextResponse.json(
       {
         error: "AI processing is not available",
-        message: getAiStatusMessage(),
-        hint: "Set AI_ENABLED=true and configure OPENROUTER_API_KEY to enable AI features"
+        message: getAiStatusMessage(status),
+        hint: "Enable AI from the admin panel or set AI_ENABLED=true"
       },
       { status: 503 }
     );

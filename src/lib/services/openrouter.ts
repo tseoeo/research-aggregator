@@ -47,7 +47,7 @@ export class OpenRouterService {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || "";
-    this.model = model || process.env.OPENROUTER_MODEL || "z-ai/glm-4.7";
+    this.model = model || process.env.OPENROUTER_MODEL || "moonshotai/kimi-k2.5";
 
     if (!this.apiKey) {
       console.warn("OpenRouter API key not configured");

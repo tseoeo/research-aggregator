@@ -21,12 +21,14 @@ import { db } from "../lib/db";
 import { papers, paperCardAnalyses } from "../lib/db/schema";
 import { desc, gte, isNull, eq, sql, lte, and } from "drizzle-orm";
 import { AI_CATEGORIES } from "../lib/services/arxiv";
+import { getAiEnabledRuntime, subscribeToConfigUpdates } from "../lib/ai/runtime-toggle";
 
 // Track all workers for graceful shutdown
 const workers: Worker[] = [];
 
-// AI processing toggle - set AI_ENABLED=true to enable AI summaries and analyses
-const AI_ENABLED = process.env.AI_ENABLED === "true";
+// AI workers are tracked separately for dynamic pause/resume
+let summaryWorker: Worker | null = null;
+let analysisWorker: Worker | null = null;
 
 /**
  * Get yesterday's date as ISO string (YYYY-MM-DD)
@@ -390,6 +392,27 @@ async function backfillMissingDates() {
 }
 
 /**
+ * Set AI workers and queues to paused or resumed state
+ */
+async function setAiWorkersState(enabled: boolean) {
+  if (enabled) {
+    console.log("[Main] [AI] Resuming AI workers and queues...");
+    if (summaryWorker) await summaryWorker.resume();
+    if (analysisWorker) await analysisWorker.resume();
+    await summaryQueue.resume();
+    await analysisQueue.resume();
+    console.log("[Main] [AI] AI workers and queues RESUMED");
+  } else {
+    console.log("[Main] [AI] Pausing AI workers and queues...");
+    if (summaryWorker) await summaryWorker.pause();
+    if (analysisWorker) await analysisWorker.pause();
+    await summaryQueue.pause();
+    await analysisQueue.pause();
+    console.log("[Main] [AI] AI workers and queues PAUSED");
+  }
+}
+
+/**
  * Start all workers
  */
 async function startWorkers() {
@@ -397,22 +420,40 @@ async function startWorkers() {
   console.log("Starting Research Aggregator Workers");
   console.log("=".repeat(50));
 
-  // Create and start workers
+  // Create and start non-AI workers (always active)
   workers.push(createArxivWorker());
   workers.push(createSocialMonitorWorker());
   workers.push(createNewsWorker());
   workers.push(createBackfillWorker());
 
-  // Only start AI workers if AI is enabled
-  if (AI_ENABLED) {
-    workers.push(createSummaryWorker());
-    workers.push(createAnalysisWorker());
-    console.log("[Main] [AI] Started AI workers (summary + analysis)");
+  // Always create AI workers — control via pause/resume
+  summaryWorker = createSummaryWorker();
+  analysisWorker = createAnalysisWorker();
+  workers.push(summaryWorker);
+  workers.push(analysisWorker);
+
+  // Check runtime toggle to decide initial AI state
+  const aiEnabled = await getAiEnabledRuntime(true); // skip cache for fresh read
+  console.log(`[Main] [AI] Runtime AI toggle: ${aiEnabled ? "ENABLED" : "DISABLED"}`);
+
+  if (!aiEnabled) {
+    // Pause AI workers and queues immediately
+    await setAiWorkersState(false);
   } else {
-    console.log("[Main] [AI] AI workers NOT started (AI_ENABLED=false)");
+    console.log("[Main] [AI] AI workers running (summary + analysis)");
   }
 
-  console.log(`\n[Main] Started ${workers.length} workers (AI: ${AI_ENABLED ? "ON" : "OFF"})`);
+  console.log(`\n[Main] Started ${workers.length} workers (AI: ${aiEnabled ? "ON (active)" : "ON (paused)"})`);
+
+  // Subscribe to config updates via Redis Pub/Sub for dynamic toggle
+  subscribeToConfigUpdates(async (data) => {
+    if (data.key === "ai_enabled") {
+      const enabled = data.value === true;
+      console.log(`[Main] [AI] Config update received: ai_enabled=${enabled}`);
+      await setAiWorkersState(enabled);
+    }
+  });
+  console.log("[Main] [AI] Subscribed to config:updates Pub/Sub channel");
 
   // Schedule recurring jobs
   await scheduleJobs();
@@ -422,11 +463,11 @@ async function startWorkers() {
   await backfillMissingDates();
 
   // Backfill missing summaries and analyses on startup (only if AI enabled)
-  if (AI_ENABLED) {
+  if (aiEnabled) {
     console.log("[Main] [AI] AI processing is ENABLED - running backfill");
     await backfillMissingAI();
   } else {
-    console.log("[Main] [AI] AI processing is DISABLED - skipping backfill (set AI_ENABLED=true to enable)");
+    console.log("[Main] [AI] AI processing is DISABLED - skipping backfill (toggle on from admin panel to enable)");
   }
 
   console.log("[Main] All workers running\n");
